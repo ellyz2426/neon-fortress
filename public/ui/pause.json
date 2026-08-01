@@ -1,0 +1,189 @@
+{
+  "element": {
+    "sourceTag": "panel",
+    "type": "custom",
+    "children": [
+      {
+        "type": "container",
+        "sourceTag": "div",
+        "children": [
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "PAUSED"
+            ],
+            "properties": {
+              "fontSize": "28",
+              "fontWeight": "bold",
+              "color": "#ffcc00"
+            },
+            "dataUid": "uid-3"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [],
+            "properties": {
+              "height": "8"
+            },
+            "dataUid": "uid-4"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              {
+                "type": "container",
+                "sourceTag": "div",
+                "children": [
+                  "Resume"
+                ],
+                "properties": {
+                  "fontSize": "18",
+                  "fontWeight": "bold",
+                  "color": "#000000"
+                },
+                "dataUid": "uid-6"
+              }
+            ],
+            "properties": {
+              "name": "btn-resume",
+              "backgroundColor": "#00aaaa",
+              "borderRadius": "8",
+              "padding": "12",
+              "width": "220",
+              "alignItems": "center",
+              "cursor": "pointer"
+            },
+            "dataUid": "uid-5"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              {
+                "type": "container",
+                "sourceTag": "div",
+                "children": [
+                  "Quit"
+                ],
+                "properties": {
+                  "fontSize": "18",
+                  "fontWeight": "bold",
+                  "color": "#ffffff"
+                },
+                "dataUid": "uid-8"
+              }
+            ],
+            "properties": {
+              "name": "btn-quit",
+              "backgroundColor": "#884444",
+              "borderRadius": "8",
+              "padding": "12",
+              "width": "220",
+              "alignItems": "center",
+              "cursor": "pointer"
+            },
+            "dataUid": "uid-7"
+          }
+        ],
+        "properties": {
+          "backgroundColor": "#000000cc",
+          "borderRadius": "16",
+          "padding": "24",
+          "width": "400",
+          "flexDirection": "column",
+          "gap": "12",
+          "alignItems": "center"
+        },
+        "dataUid": "uid-2"
+      }
+    ],
+    "properties": {},
+    "dataUid": "uid-1"
+  },
+  "classes": {},
+  "ranges": {
+    "uid-1": {
+      "start": {
+        "line": 0,
+        "column": 0
+      },
+      "end": {
+        "line": 11,
+        "column": 8
+      }
+    },
+    "uid-2": {
+      "start": {
+        "line": 1,
+        "column": 2
+      },
+      "end": {
+        "line": 10,
+        "column": 8
+      }
+    },
+    "uid-3": {
+      "start": {
+        "line": 2,
+        "column": 4
+      },
+      "end": {
+        "line": 2,
+        "column": 71
+      }
+    },
+    "uid-4": {
+      "start": {
+        "line": 3,
+        "column": 4
+      },
+      "end": {
+        "line": 3,
+        "column": 26
+      }
+    },
+    "uid-5": {
+      "start": {
+        "line": 4,
+        "column": 4
+      },
+      "end": {
+        "line": 6,
+        "column": 10
+      }
+    },
+    "uid-6": {
+      "start": {
+        "line": 5,
+        "column": 6
+      },
+      "end": {
+        "line": 5,
+        "column": 73
+      }
+    },
+    "uid-7": {
+      "start": {
+        "line": 7,
+        "column": 4
+      },
+      "end": {
+        "line": 9,
+        "column": 10
+      }
+    },
+    "uid-8": {
+      "start": {
+        "line": 8,
+        "column": 6
+      },
+      "end": {
+        "line": 8,
+        "column": 71
+      }
+    }
+  }
+}

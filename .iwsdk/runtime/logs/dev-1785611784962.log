@@ -1,0 +1,23 @@
+
+> neon-fortress@1.0.0 dev:runtime
+> vite
+
+🚀 Generating initial UIKitML files for dev server...
+👁️  UIKitML file watcher started - monitoring for changes...
+
+  VITE v7.3.6  ready in 1617 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://198.19.0.2:5173/
+🖥️  IWSDK: Using SwiftShader (software rendering) — no GPU detected
+7:17:18 PM [vite] (client) page reload src/game.ts
+7:18:50 PM [vite] (client) page reload src/game.ts
+7:19:21 PM [vite] (client) page reload src/game.ts
+7:20:27 PM [vite] (client) page reload src/game.ts
+7:20:44 PM [vite] (client) page reload src/game.ts
+7:21:23 PM [vite] (client) page reload src/game.ts
+7:21:29 PM [vite] (client) page reload src/game.ts
+7:22:15 PM [vite] (client) page reload src/game.ts
+7:22:21 PM [vite] (client) page reload src/game.ts
+7:22:27 PM [vite] (client) page reload src/game.ts
+7:22:34 PM [vite] (client) page reload src/game.ts

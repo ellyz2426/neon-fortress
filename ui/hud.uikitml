@@ -1,0 +1,18 @@
+<panel>
+  <div background-color="#00000088" border-radius="8" padding="12" width="500" flex-direction="row" justify-content="space-between" align-items="center">
+    <div flex-direction="column" gap="2">
+      <div name="hud-score" font-size="18" font-weight="bold" color="#00ffff">Score: 0</div>
+      <div name="hud-combo" font-size="14" color="#ffcc00"></div>
+    </div>
+    <div flex-direction="column" gap="2" align-items="center">
+      <div name="hud-fuel" font-size="14" color="#ff8800">Fuel: 100%</div>
+      <div name="hud-altitude" font-size="12" color="#88aacc">Alt: 1.5m</div>
+      <div name="hud-timer" font-size="12" color="#ff4444"></div>
+    </div>
+    <div flex-direction="column" gap="2" align-items="flex-end">
+      <div name="hud-lives" font-size="14" color="#ff4444">Lives: 3</div>
+      <div name="hud-level" font-size="14" color="#aaaaaa">Level: 1</div>
+      <div name="hud-powerups" font-size="11" color="#44ff44"></div>
+    </div>
+  </div>
+</panel>
