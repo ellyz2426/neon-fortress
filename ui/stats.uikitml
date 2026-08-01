@@ -11,6 +11,7 @@
         <div name="stat-shots" font-size="13" color="#aaaaaa">Shots: 0</div>
         <div name="stat-powerups" font-size="13" color="#aaaaaa">Power-ups: 0</div>
         <div name="stat-bosses" font-size="13" color="#aaaaaa">Bosses: 0</div>
+        <div name="stat-asteroids" font-size="13" color="#8888aa">Asteroids: 0</div>
       </div>
       <div flex-direction="column" gap="4">
         <div name="stat-combo" font-size="13" color="#aaaaaa">Best Combo: x0</div>
@@ -19,6 +20,8 @@
         <div name="stat-checkpoints" font-size="13" color="#44ff44">Checkpoints: 0</div>
         <div name="stat-ground" font-size="13" color="#ff8800">Ground Tgts: 0</div>
         <div name="stat-formations" font-size="13" color="#ffcc00">Formations: 0</div>
+        <div name="stat-cloakers" font-size="13" color="#4488ff">Cloakers: 0</div>
+        <div name="stat-bombs" font-size="13" color="#ff4444">Smart Bombs: 0</div>
       </div>
     </div>
     <div height="6"></div>

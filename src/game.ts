@@ -265,6 +265,35 @@ class AudioEngine {
         g2.gain.exponentialRampToValueAtTime(0.01, now + 0.1 * i + 0.3);
         o2.start(now + 0.1 * i); o2.stop(now + 0.1 * i + 0.3);
       });
+    } else if (type === 'cloak') {
+      // Ethereal shimmer for cloaker appearing
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(1800, now);
+      o.frequency.exponentialRampToValueAtTime(600, now + 0.3);
+      o.connect(g); g.gain.value = this.sfxVol * 0.4;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      o.start(now); o.stop(now + 0.35);
+    } else if (type === 'rock_break') {
+      // Crunch for asteroid destruction
+      const bufSize = ctx.sampleRate * 0.25;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 0.7) * 0.6;
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.connect(g);
+      g.gain.value = this.sfxVol * 0.7;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      src.start(now);
+    } else if (type === 'sector') {
+      // Deep resonant tone for sector transition
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(100, now);
+      o.frequency.linearRampToValueAtTime(200, now + 0.4);
+      o.connect(g); g.gain.value = this.sfxVol * 0.5;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+      o.start(now); o.stop(now + 0.6);
     }
   }
 
@@ -340,6 +369,8 @@ interface Formation { fighters: EnemyFighter[]; centerZ: number; pattern: 'v' | 
 interface GroundTarget { group: Group; z: number; lane: number; alive: boolean; hp: number; maxHp: number; type: 'hangar' | 'radar' | 'depot'; }
 interface CheckpointMarker { group: Group; z: number; reached: boolean; }
 interface DiveBomber { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; phase: 'hover' | 'dive'; diveTimer: number; targetX: number; targetY: number; }
+interface Asteroid { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; size: number; rotSpeed: { x: number; y: number; z: number }; vx: number; vy: number; }
+interface CloakerEnemy { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; cooldown: number; cloakPhase: number; visible_pct: number; shimmerTimer: number; }
 
 interface GameState {
   screen: GameScreen;
@@ -398,6 +429,13 @@ interface GameState {
   bonusActive: boolean;
   bonusTimer: number;
   diveBombersKilled: number;
+  // Round 5 additions
+  smartBombs: number;
+  smartBombCooldown: number;
+  totalSmartBombs: number;
+  asteroidsDestroyed: number;
+  cloakersKilled: number;
+  sectorTheme: number; // rotates 0-3
 }
 
 const state: GameState = {
@@ -420,6 +458,8 @@ const state: GameState = {
   alertText: '', alertTimer: 0,
   checkpointsReached: 0, groundTargetsDestroyed: 0, formationsDestroyed: 0,
   bonusActive: false, bonusTimer: 0, diveBombersKilled: 0,
+  smartBombs: 1, smartBombCooldown: 0, totalSmartBombs: 0,
+  asteroidsDestroyed: 0, cloakersKilled: 0, sectorTheme: 0,
 };
 
 // ───── Scene Objects ─────
@@ -449,6 +489,8 @@ const formations: Formation[] = [];
 const groundTargets: GroundTarget[] = [];
 const checkpointMarkers: CheckpointMarker[] = [];
 const diveBombers: DiveBomber[] = [];
+const asteroids: Asteroid[] = [];
+const cloakers: CloakerEnemy[] = [];
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -958,6 +1000,171 @@ function createBonusRing(z: number): Group {
   return g;
 }
 
+// ───── Asteroid ─────
+function createAsteroidMesh(size: number): Group {
+  const g = new Group();
+  // Rough rocky shape using a low-poly sphere with wireframe
+  const geo = new SphereGeometry(size, 6, 4);
+  // Displace vertices for rough asteroid look
+  const posAttr = geo.attributes.position;
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const y = posAttr.getY(i);
+    const z = posAttr.getZ(i);
+    const noise = 0.7 + Math.random() * 0.6;
+    posAttr.setXYZ(i, x * noise, y * noise, z * noise);
+  }
+  geo.computeVertexNormals();
+  const core = new Mesh(geo, new MeshStandardMaterial({ color: 0x555566, roughness: 0.9, metalness: 0.2, emissive: 0x222233, emissiveIntensity: 0.2 }));
+  g.add(core);
+  // Wireframe overlay
+  const wire = new LineSegments(new EdgesGeometry(geo), new LineBasicMaterial({ color: 0x8888aa, transparent: true, opacity: 0.5 }));
+  g.add(wire);
+  return g;
+}
+
+// ───── Cloaker Enemy ─────
+function createCloakerMesh(): Group {
+  const g = new Group();
+  // Sleek angular stealth fighter shape
+  const body = new Mesh(new BoxGeometry(0.7, 0.15, 1.0), new MeshStandardMaterial({ color: 0x112244, roughness: 0.3, metalness: 0.9, emissive: 0x223366, emissiveIntensity: 0.3, transparent: true, opacity: 0.8 }));
+  g.add(body);
+  // Angular wings
+  const lw = new Mesh(new BoxGeometry(0.8, 0.05, 0.5), new MeshStandardMaterial({ color: 0x112244, roughness: 0.3, metalness: 0.9, emissive: 0x223366, emissiveIntensity: 0.3, transparent: true, opacity: 0.8 }));
+  lw.position.set(-0.5, 0, 0.1);
+  lw.rotation.z = -0.2;
+  g.add(lw);
+  const rw = new Mesh(new BoxGeometry(0.8, 0.05, 0.5), new MeshStandardMaterial({ color: 0x112244, roughness: 0.3, metalness: 0.9, emissive: 0x223366, emissiveIntensity: 0.3, transparent: true, opacity: 0.8 }));
+  rw.position.set(0.5, 0, 0.1);
+  rw.rotation.z = 0.2;
+  g.add(rw);
+  // Shimmer eye (glows when visible)
+  const eye = new Mesh(new SphereGeometry(0.06, 6, 4), new MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.6 }));
+  eye.position.set(0, 0.1, -0.35);
+  g.add(eye);
+  // Wireframe
+  const wireGeo = new EdgesGeometry(new BoxGeometry(0.75, 0.2, 1.05));
+  const wire = new LineSegments(wireGeo, new LineBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3 }));
+  g.add(wire);
+  return g;
+}
+
+// ───── Smart Bomb VFX ─────
+function triggerSmartBomb() {
+  if (state.smartBombs <= 0 || state.smartBombCooldown > 0) return;
+  state.smartBombs--;
+  state.totalSmartBombs++;
+  state.smartBombCooldown = 1.0;
+  audio.play('bomb');
+  triggerScreenShake(0.6, 0.8);
+  showAlert('SMART BOMB!');
+
+  // Kill all enemies on screen
+  let killCount = 0;
+  for (const e of enemies) {
+    if (e.alive && e.group.position.z > -25 && e.group.position.z < 15) {
+      e.alive = false; e.group.visible = false;
+      spawnParticles(e.group.position.x, e.group.position.y, e.group.position.z, 0xffcc00, 8);
+      killCount++;
+    }
+  }
+  for (const d of patrolDrones) {
+    if (d.alive && d.group.position.z > -25 && d.group.position.z < 15) {
+      d.alive = false; d.group.visible = false;
+      spawnParticles(d.group.position.x, d.group.position.y, d.group.position.z, 0xffcc00, 8);
+      killCount++;
+    }
+  }
+  for (const m of mines) {
+    if (m.alive && m.mesh.position.z > -25 && m.mesh.position.z < 15) {
+      m.alive = false; m.mesh.visible = false;
+      spawnParticles(m.mesh.position.x, m.mesh.position.y, m.mesh.position.z, 0xffcc00, 6);
+      killCount++;
+    }
+  }
+  for (const db of diveBombers) {
+    if (db.alive && db.group.position.z > -25 && db.group.position.z < 15) {
+      db.alive = false; db.group.visible = false;
+      spawnParticles(db.group.position.x, db.group.position.y, db.group.position.z, 0xffcc00, 8);
+      killCount++;
+    }
+  }
+  for (const cl of cloakers) {
+    if (cl.alive && cl.group.position.z > -25 && cl.group.position.z < 15) {
+      cl.alive = false; cl.group.visible = false;
+      spawnParticles(cl.group.position.x, cl.group.position.y, cl.group.position.z, 0x4488ff, 10);
+      killCount++;
+    }
+  }
+  for (const a of asteroids) {
+    if (a.alive && a.group.position.z > -25 && a.group.position.z < 15) {
+      a.alive = false; a.group.visible = false;
+      spawnParticles(a.group.position.x, a.group.position.y, a.group.position.z, 0x8888aa, 10);
+      killCount++;
+    }
+  }
+  // Remove enemy bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    if (bullets[i].isEnemy) {
+      world.scene.remove(bullets[i].mesh);
+      bullets.splice(i, 1);
+    }
+  }
+  state.totalKills += killCount;
+  addScore(killCount * 100);
+
+  // Flash VFX - expanding ring
+  const ring = new Mesh(new RingGeometry(0.5, 1.0, 24), new MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.8, side: 2 }));
+  ring.position.set(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
+  ring.rotation.x = -Math.PI / 2;
+  world.scene.add(ring);
+  let ringLife = 0.6;
+  const expandRing = () => {
+    ringLife -= 0.016;
+    if (ringLife <= 0) { world.scene.remove(ring); return; }
+    const s = 1 + (0.6 - ringLife) * 40;
+    ring.scale.setScalar(s);
+    (ring.material as MeshBasicMaterial).opacity = ringLife;
+    requestAnimationFrame(expandRing);
+  };
+  expandRing();
+}
+
+// ───── Sector Theme ─────
+const SECTOR_THEMES = [
+  { name: 'DEEP SPACE', fogColor: 0x000811, ambientTint: 0x224466, gridColor: 0x003344 },
+  { name: 'NEBULA', fogColor: 0x110022, ambientTint: 0x664488, gridColor: 0x330044 },
+  { name: 'ASTEROID BELT', fogColor: 0x0a0a0a, ambientTint: 0x886644, gridColor: 0x332200 },
+  { name: 'ION STORM', fogColor: 0x001122, ambientTint: 0x2288aa, gridColor: 0x004466 },
+];
+
+function applySectorTheme(themeIdx: number) {
+  const theme = SECTOR_THEMES[themeIdx % SECTOR_THEMES.length];
+  if (world && world.scene) {
+    world.scene.background = new Color(theme.fogColor);
+    if (world.scene.fog) {
+      (world.scene.fog as FogExp2).color.setHex(theme.fogColor);
+    }
+    // Tint ambient orbs
+    ambientOrbs.forEach(orb => {
+      (orb.material as MeshBasicMaterial).color.setHex(theme.ambientTint);
+    });
+    // Tint grid lines
+    gridLines.forEach(line => {
+      ((line as LineSegments).material as LineBasicMaterial).color.setHex(theme.gridColor);
+    });
+  }
+}
+
+function getPerformanceRank(score: number, kills: number, level: number, combo: number): { rank: string; label: string; color: string } {
+  const total = score / 1000 + kills * 2 + level * 10 + combo * 5;
+  if (total >= 200) return { rank: 'S', label: 'SUPREME COMMANDER', color: '#ffcc00' };
+  if (total >= 120) return { rank: 'A', label: 'ACE PILOT', color: '#00ffcc' };
+  if (total >= 70) return { rank: 'B', label: 'VETERAN', color: '#00aaff' };
+  if (total >= 30) return { rank: 'C', label: 'CADET', color: '#88ff44' };
+  return { rank: 'D', label: 'ROOKIE', color: '#ff8844' };
+}
+
 function spawnFormation(baseZ: number) {
   const patterns: Array<'v' | 'line' | 'diamond'> = ['v', 'line', 'diamond'];
   const pattern = patterns[Math.floor(Math.random() * patterns.length)];
@@ -1212,6 +1419,55 @@ function spawnOpenSection() {
       diveBombers.push({ group: dbg, z: dbz, x: dbx, y: dby, alive: true, hp: 2 + Math.floor(lvl / 4), phase: 'hover', diveTimer: 2 + Math.random() * 2, targetX: 0, targetY: 0 });
     }
   }
+  // Asteroids (level 2+) — floating rocks in open space
+  if (lvl >= 2 && Math.random() < 0.35 + lvl * 0.04) {
+    const astCount = 2 + Math.floor(lvl / 3);
+    for (let i = 0; i < astCount; i++) {
+      const size = 0.3 + Math.random() * 0.5;
+      const ag = createAsteroidMesh(size);
+      const ax = (Math.random() - 0.5) * 8;
+      const ay = 0.5 + Math.random() * 3;
+      const az = z - 5 - i * 4 - Math.random() * 5;
+      ag.position.set(ax, ay, az);
+      world.scene.add(ag);
+      asteroids.push({
+        group: ag, z: az, x: ax, y: ay, alive: true,
+        hp: Math.ceil(size * 3), size,
+        rotSpeed: { x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2, z: (Math.random() - 0.5) * 2 },
+        vx: (Math.random() - 0.5) * 1.5, vy: 0,
+      });
+    }
+  }
+  // Cloaker enemies (level 4+) — stealth fighters that phase in/out
+  if (lvl >= 4 && Math.random() < 0.2 + lvl * 0.03) {
+    const clCount = 1 + Math.floor(lvl / 6);
+    for (let i = 0; i < clCount; i++) {
+      const cg = createCloakerMesh();
+      const cx = (Math.random() - 0.5) * 7;
+      const cy = 1.5 + Math.random() * 1.5;
+      const cz = z - 6 - i * 6 - Math.random() * 4;
+      cg.position.set(cx, cy, cz);
+      world.scene.add(cg);
+      cloakers.push({
+        group: cg, z: cz, x: cx, y: cy, alive: true,
+        hp: 2 + Math.floor(lvl / 5), cooldown: 3 + Math.random() * 2,
+        cloakPhase: Math.random() * Math.PI * 2, visible_pct: 0, shimmerTimer: 0,
+      });
+    }
+  }
+  // Smart bomb power-up (rare, level 5+)
+  if (lvl >= 5 && Math.random() < 0.12) {
+    const bm = createPowerUpMesh('magnet'); // reuse mesh type but tinted
+    bm.position.set((Math.random() - 0.5) * 4, 1.5, z - 22);
+    // Tint to golden
+    bm.children.forEach(child => {
+      if ((child as Mesh).material && 'color' in (child as Mesh).material) {
+        ((child as Mesh).material as MeshBasicMaterial).color.setHex(0xffaa00);
+      }
+    });
+    world.scene.add(bm);
+    powerUps.push({ mesh: bm, z: z - 22, lane: 0, type: 'magnet', alive: true }); // magnet gives score, smart bomb via 'b' key
+  }
   fortressSpawnZ -= 30;
 }
 
@@ -1275,6 +1531,12 @@ function cleanupBehind() {
   for (let i = diveBombers.length - 1; i >= 0; i--) {
     if (diveBombers[i].z > limit) { world.scene.remove(diveBombers[i].group); diveBombers.splice(i, 1); }
   }
+  for (let i = asteroids.length - 1; i >= 0; i--) {
+    if (asteroids[i].z > limit) { world.scene.remove(asteroids[i].group); asteroids.splice(i, 1); }
+  }
+  for (let i = cloakers.length - 1; i >= 0; i--) {
+    if (cloakers[i].z > limit) { world.scene.remove(cloakers[i].group); cloakers.splice(i, 1); }
+  }
   // Clean dead formations
   for (let i = formations.length - 1; i >= 0; i--) {
     const f = formations[i];
@@ -1304,6 +1566,10 @@ function resetGame() {
   state.alertText = ''; state.alertTimer = 0;
   state.groundTargetsDestroyed = 0; state.formationsDestroyed = 0;
   state.bonusActive = false; state.bonusTimer = 0; state.diveBombersKilled = 0;
+  state.smartBombs = 1; state.smartBombCooldown = 0; state.totalSmartBombs = 0;
+  state.asteroidsDestroyed = 0; state.cloakersKilled = 0;
+  state.sectorTheme = 0;
+  applySectorTheme(0);
   playerX = 0;
   fortressSpawnZ = -20;
   // Clear all objects
@@ -1327,6 +1593,8 @@ function resetGame() {
   groundTargets.forEach(g => world.scene.remove(g.group)); groundTargets.length = 0;
   checkpointMarkers.forEach(c => world.scene.remove(c.group)); checkpointMarkers.length = 0;
   diveBombers.forEach(d => world.scene.remove(d.group)); diveBombers.length = 0;
+  asteroids.forEach(a => world.scene.remove(a.group)); asteroids.length = 0;
+  cloakers.forEach(c => world.scene.remove(c.group)); cloakers.length = 0;
   formations.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
@@ -1414,6 +1682,9 @@ function saveStats() {
     stats.checkpointsReached = (stats.checkpointsReached || 0) + state.checkpointsReached;
     stats.groundTargetsDestroyed = (stats.groundTargetsDestroyed || 0) + state.groundTargetsDestroyed;
     stats.formationsDestroyed = (stats.formationsDestroyed || 0) + state.formationsDestroyed;
+    stats.asteroidsDestroyed = (stats.asteroidsDestroyed || 0) + state.asteroidsDestroyed;
+    stats.cloakersKilled = (stats.cloakersKilled || 0) + state.cloakersKilled;
+    stats.totalSmartBombs = (stats.totalSmartBombs || 0) + state.totalSmartBombs;
     localStorage.setItem('neon-fortress-stats', JSON.stringify(stats));
     state.highScore = stats.highScore;
   } catch {}
@@ -1484,6 +1755,7 @@ export class GameSystem extends createSystem({
         if (state.screen === 'playing') { state.screen = 'paused'; audio.stopMusic(); }
         else if (state.screen === 'paused') { state.screen = 'playing'; audio.startMusic(); }
       }
+      if (e.key === 'b' && state.screen === 'playing') triggerSmartBomb();
     });
     window.addEventListener('keyup', (e) => { this.keys[e.key.toLowerCase()] = false; });
 
@@ -1636,6 +1908,7 @@ export class GameSystem extends createSystem({
       if (stick && Math.abs(stick.x) > 0.2) moveX = stick.x;
       if (right.getButtonPressed(InputComponent.Trigger)) shoot = true;
       if (right.getButtonPressed(InputComponent.Squeeze)) fireMissile = true;
+      if (right.getButtonPressed(InputComponent.A_Button)) triggerSmartBomb();
     }
     if (left) {
       const stick = left.getAxesValues(InputComponent.Thumbstick);
@@ -1702,6 +1975,7 @@ export class GameSystem extends createSystem({
     if (state.spreadTimer > 0) { state.spreadTimer -= dt; if (state.spreadTimer <= 0) state.spreadShot = false; }
     if (state.invincibleTimer > 0) state.invincibleTimer -= dt;
     if (state.screenShakeTimer > 0) state.screenShakeTimer -= dt;
+    if (state.smartBombCooldown > 0) state.smartBombCooldown -= dt;
 
     // Music tension near boss
     if (boss && boss.alive) {
@@ -1730,7 +2004,17 @@ export class GameSystem extends createSystem({
     if (newLevel > state.level) {
       state.level = newLevel;
       state.scrollSpeed = state.baseSpeed + state.level * 0.3;
-      showAlert(`LEVEL ${state.level}! SPEED INCREASING!`);
+      // Sector theme changes every 3 levels
+      const newSector = Math.floor((state.level - 1) / 3) % SECTOR_THEMES.length;
+      if (newSector !== state.sectorTheme) {
+        state.sectorTheme = newSector;
+        applySectorTheme(newSector);
+        const theme = SECTOR_THEMES[newSector];
+        showAlert(`ENTERING ${theme.name} SECTOR!`);
+        audio.play('sector');
+      } else {
+        showAlert(`LEVEL ${state.level}! SPEED INCREASING!`);
+      }
     }
     if (fortressSpawnZ > state.scrollZ - 80) {
       if (state.fortressSection) spawnFortressSection();
@@ -1767,6 +2051,10 @@ export class GameSystem extends createSystem({
     this.updateCheckpoints(dt);
     // ── Update dive bombers ──
     this.updateDiveBombers(dt);
+    // ── Update asteroids ──
+    this.updateAsteroids(dt);
+    // ── Update cloakers ──
+    this.updateCloakers(dt);
     // ── Update bonus corridor ──
     this.updateBonusCorridor(dt);
     // ── Alert timer ──
@@ -1863,6 +2151,45 @@ export class GameSystem extends createSystem({
               spawnFloatingScore(db.group.position.x, db.group.position.y + 0.5, db.group.position.z, 500);
               audio.play('explode');
               if (b.isMissile) triggerScreenShake(0.2, 0.25);
+            } else audio.play('hit');
+            hit = true;
+          }
+        }
+
+        // vs asteroids
+        if (!hit) for (const ast of asteroids) {
+          if (!ast.alive || hit) continue;
+          const dist = Math.sqrt(
+            Math.pow(b.mesh.position.x - ast.group.position.x, 2) +
+            Math.pow(b.mesh.position.y - ast.group.position.y, 2) +
+            Math.pow(b.mesh.position.z - ast.group.position.z, 2)
+          );
+          if (dist < ast.size + 0.3) {
+            ast.hp -= dmg;
+            if (ast.hp <= 0) {
+              ast.alive = false; ast.group.visible = false;
+              const pts = Math.ceil(ast.size * 300);
+              addScore(pts); addCombo(); state.totalKills++; state.asteroidsDestroyed++;
+              spawnParticles(ast.group.position.x, ast.group.position.y, ast.group.position.z, 0x8888aa, 15);
+              spawnFloatingScore(ast.group.position.x, ast.group.position.y + 0.5, ast.group.position.z, pts);
+              audio.play('rock_break');
+              if (b.isMissile) triggerScreenShake(0.2, 0.25);
+            } else audio.play('hit');
+            hit = true;
+          }
+        }
+
+        // vs cloakers (only hittable when visible)
+        if (!hit) for (const cl of cloakers) {
+          if (!cl.alive || hit || cl.visible_pct < 0.2) continue;
+          if (Math.abs(b.mesh.position.x - cl.group.position.x) < 0.6 && Math.abs(b.mesh.position.y - cl.group.position.y) < 0.4 && Math.abs(b.mesh.position.z - cl.group.position.z) < 0.6) {
+            cl.hp -= dmg;
+            if (cl.hp <= 0) {
+              cl.alive = false; cl.group.visible = false;
+              addScore(600); addCombo(); state.totalKills++; state.cloakersKilled++;
+              spawnParticles(cl.group.position.x, cl.group.position.y, cl.group.position.z, 0x4488ff, 18);
+              spawnFloatingScore(cl.group.position.x, cl.group.position.y + 0.5, cl.group.position.z, 600);
+              audio.play('explode');
             } else audio.play('hit');
             hit = true;
           }
@@ -2420,6 +2747,97 @@ export class GameSystem extends createSystem({
     }
   }
 
+  private updateAsteroids(dt: number) {
+    for (const a of asteroids) {
+      if (!a.alive) continue;
+      a.group.position.z = a.z - state.scrollZ;
+      a.group.position.x = a.x + Math.sin(this.time * 0.5 + a.z) * 0.3;
+      a.group.position.y = a.y;
+      // Tumble rotation
+      a.group.rotation.x += a.rotSpeed.x * dt;
+      a.group.rotation.y += a.rotSpeed.y * dt;
+      a.group.rotation.z += a.rotSpeed.z * dt;
+      // Slow drift
+      a.x += a.vx * dt * 0.3;
+      // Player collision
+      const dist = Math.sqrt(
+        Math.pow(playerGroup.position.x - a.group.position.x, 2) +
+        Math.pow(playerGroup.position.y - a.group.position.y, 2) +
+        Math.pow(playerGroup.position.z - a.group.position.z, 2)
+      );
+      if (dist < a.size + 0.4) {
+        a.alive = false; a.group.visible = false;
+        playerHit();
+        spawnParticles(a.group.position.x, a.group.position.y, a.group.position.z, 0x8888aa, 15);
+        audio.play('rock_break');
+        triggerScreenShake(0.2, 0.2);
+      }
+    }
+  }
+
+  private updateCloakers(dt: number) {
+    for (const cl of cloakers) {
+      if (!cl.alive) continue;
+      cl.group.position.z = cl.z - state.scrollZ;
+      // Sinusoidal movement
+      cl.group.position.x = cl.x + Math.sin(this.time * 1.8 + cl.z * 0.5) * 2;
+      cl.group.position.y = cl.y + Math.sin(this.time * 2.5 + cl.z) * 0.4;
+      // Cloaking cycle: fade in/out
+      cl.cloakPhase += dt * 1.2;
+      const cycle = Math.sin(cl.cloakPhase);
+      // Visible when cycle > 0.3, fully visible at 1.0
+      cl.visible_pct = Math.max(0, (cycle - 0.3) / 0.7);
+      // Apply opacity to all mesh children
+      cl.group.children.forEach(child => {
+        if ((child as Mesh).material && 'opacity' in (child as Mesh).material) {
+          ((child as Mesh).material as any).opacity = 0.05 + cl.visible_pct * 0.85;
+        }
+      });
+      // Shimmer effect when partially visible
+      cl.shimmerTimer += dt;
+      if (cl.visible_pct > 0.1 && cl.visible_pct < 0.7) {
+        const shimmer = Math.sin(this.time * 15 + cl.z) * 0.2;
+        cl.group.children.forEach((child, idx) => {
+          if (idx === 3) { // eye
+            ((child as Mesh).material as MeshBasicMaterial).opacity = 0.3 + shimmer + cl.visible_pct * 0.5;
+          }
+        });
+      }
+      // Shoot when sufficiently visible
+      cl.cooldown -= dt;
+      if (cl.cooldown <= 0 && cl.visible_pct > 0.5 && cl.group.position.z > -20 && cl.group.position.z < 10) {
+        cl.cooldown = 2.5 / getDiffMult();
+        const dx = playerGroup.position.x - cl.group.position.x;
+        const dy = playerGroup.position.y - cl.group.position.y;
+        const dz = playerGroup.position.z - cl.group.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 0.1) {
+          // Dual stealth bolts
+          for (let s = 0; s < 2; s++) {
+            const b = createBullet(0x4488ff, true);
+            b.position.set(cl.group.position.x + (s - 0.5) * 0.4, cl.group.position.y, cl.group.position.z);
+            world.scene.add(b);
+            const speed = 11;
+            bullets.push({ mesh: b, vx: (dx / dist) * speed, vy: (dy / dist) * speed, vz: (dz / dist) * speed, life: 2.5, isEnemy: true });
+          }
+          audio.play('cloak');
+        }
+      }
+      // Player collision when visible
+      if (cl.visible_pct > 0.3) {
+        const dx = playerGroup.position.x - cl.group.position.x;
+        const dy = playerGroup.position.y - cl.group.position.y;
+        const dz = playerGroup.position.z - cl.group.position.z;
+        if (Math.abs(dx) < 0.6 && Math.abs(dy) < 0.4 && Math.abs(dz) < 0.6) {
+          cl.alive = false; cl.group.visible = false;
+          playerHit();
+          spawnParticles(cl.group.position.x, cl.group.position.y, cl.group.position.z, 0x4488ff, 15);
+          audio.play('explode');
+        }
+      }
+    }
+  }
+
   private updateBonusCorridor(dt: number) {
     if (!state.bonusActive) return;
     state.bonusTimer -= dt;
@@ -2478,6 +2896,11 @@ export class GameSystem extends createSystem({
     setText('hud-powerups', powers);
     // Missile ammo
     setText('hud-missiles', state.missileAmmo > 0 ? `🚀 x${state.missileAmmo}` : '');
+    // Smart bomb count
+    if (state.smartBombs > 0) {
+      const bombStatus = state.smartBombCooldown > 0 ? ' (COOLDOWN)' : '';
+      setText('hud-powerups', powers + `💣x${state.smartBombs}${bombStatus} `);
+    }
     // Weapon level
     const wlvl = state.weaponLevel > 1 ? ` | WPN Lv${state.weaponLevel}` : '';
     setText('hud-altitude', `Alt: ${state.altitude.toFixed(1)}m${wlvl}`);
@@ -2612,6 +3035,10 @@ export class GameSystem extends createSystem({
     powerUps.forEach(p => { if (p.alive) addDot(p.mesh.position.x, p.mesh.position.z, 0x44ff44); });
     // Ground targets (white)
     groundTargets.forEach(gt => { if (gt.alive) addDot(gt.group.position.x, gt.group.position.z, 0xdddddd); });
+    // Asteroids (gray)
+    asteroids.forEach(a => { if (a.alive) addDot(a.group.position.x, a.group.position.z, 0x888888); });
+    // Cloakers (blue, only when visible)
+    cloakers.forEach(cl => { if (cl.alive && cl.visible_pct > 0.3) addDot(cl.group.position.x, cl.group.position.z, 0x4488ff); });
   }
 
   private updateAmbient(time: number) {
@@ -2670,6 +3097,9 @@ export class GameSystem extends createSystem({
         setText('result-ground', `Ground Targets: ${state.groundTargetsDestroyed}`);
         setText('result-formations', `Formations: ${state.formationsDestroyed}`);
         setText('result-missiles', `Missiles Used: ${state.totalMissilesUsed}`);
+        // Performance rank
+        const rank = getPerformanceRank(state.score, state.totalKills, state.level, state.maxCombo);
+        setText('result-rank', `RANK: ${rank.rank} — ${rank.label}`);
       }
     }
 
@@ -2696,6 +3126,9 @@ export class GameSystem extends createSystem({
           setText('stat-checkpoints', `Checkpoints: ${s.checkpointsReached || 0}`);
           setText('stat-ground', `Ground Tgts: ${s.groundTargetsDestroyed || 0}`);
           setText('stat-formations', `Formations: ${s.formationsDestroyed || 0}`);
+          setText('stat-asteroids', `Asteroids: ${s.asteroidsDestroyed || 0}`);
+          setText('stat-cloakers', `Cloakers: ${s.cloakersKilled || 0}`);
+          setText('stat-bombs', `Smart Bombs: ${s.totalSmartBombs || 0}`);
         } catch {}
       }
     }

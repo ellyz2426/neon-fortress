@@ -1,7 +1,8 @@
 <panel>
   <div background-color="#000000cc" border-radius="16" padding="24" width="460" flex-direction="column" gap="8" align-items="center">
     <div font-size="28" font-weight="bold" color="#ff4444">MISSION OVER</div>
-    <div height="4"></div>
+    <div name="result-rank" font-size="20" font-weight="bold" color="#ffcc00">RANK: D — ROOKIE</div>
+    <div height="2"></div>
     <div name="result-score" font-size="22" font-weight="bold" color="#00ffff">Final Score: 0</div>
     <div name="result-high" font-size="14" color="#ffcc00">High Score: 0</div>
     <div height="2"></div>
