@@ -114,7 +114,7 @@
             "type": "container",
             "sourceTag": "div",
             "children": [
-              "Esc/P: Pause"
+              "Q/F: Launch missile"
             ],
             "properties": {
               "fontSize": "12",
@@ -125,11 +125,23 @@
           {
             "type": "container",
             "sourceTag": "div",
+            "children": [
+              "Esc/P: Pause"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-13"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
             "children": [],
             "properties": {
               "height": "4"
             },
-            "dataUid": "uid-13"
+            "dataUid": "uid-14"
           },
           {
             "type": "container",
@@ -141,7 +153,7 @@
               "fontSize": "13",
               "color": "#00aaaa"
             },
-            "dataUid": "uid-14"
+            "dataUid": "uid-15"
           },
           {
             "type": "container",
@@ -153,7 +165,7 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-15"
+            "dataUid": "uid-16"
           },
           {
             "type": "container",
@@ -165,7 +177,7 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-16"
+            "dataUid": "uid-17"
           },
           {
             "type": "container",
@@ -177,7 +189,19 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-17"
+            "dataUid": "uid-18"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Right squeeze / Left trigger: Missile"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-19"
           },
           {
             "type": "container",
@@ -186,7 +210,7 @@
             "properties": {
               "height": "4"
             },
-            "dataUid": "uid-18"
+            "dataUid": "uid-20"
           },
           {
             "type": "container",
@@ -198,7 +222,7 @@
               "fontSize": "13",
               "color": "#ff8800"
             },
-            "dataUid": "uid-19"
+            "dataUid": "uid-21"
           },
           {
             "type": "container",
@@ -210,7 +234,7 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-20"
+            "dataUid": "uid-22"
           },
           {
             "type": "container",
@@ -222,7 +246,7 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-21"
+            "dataUid": "uid-23"
           },
           {
             "type": "container",
@@ -234,7 +258,7 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-22"
+            "dataUid": "uid-24"
           },
           {
             "type": "container",
@@ -246,7 +270,55 @@
               "fontSize": "12",
               "color": "#aaaaaa"
             },
-            "dataUid": "uid-23"
+            "dataUid": "uid-25"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Avoid electric barriers (they cycle!)"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-26"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Mines explode on proximity"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-27"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Missiles do heavy damage to bosses"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-28"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Check radar for nearby threats"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-29"
           },
           {
             "type": "container",
@@ -255,7 +327,7 @@
             "properties": {
               "height": "8"
             },
-            "dataUid": "uid-24"
+            "dataUid": "uid-30"
           },
           {
             "type": "container",
@@ -271,7 +343,7 @@
                   "fontSize": "14",
                   "color": "#aaaaaa"
                 },
-                "dataUid": "uid-26"
+                "dataUid": "uid-32"
               }
             ],
             "properties": {
@@ -283,7 +355,7 @@
               "alignItems": "center",
               "cursor": "pointer"
             },
-            "dataUid": "uid-25"
+            "dataUid": "uid-31"
           }
         ],
         "properties": {
@@ -309,7 +381,7 @@
         "column": 0
       },
       "end": {
-        "line": 28,
+        "line": 34,
         "column": 8
       }
     },
@@ -319,7 +391,7 @@
         "column": 2
       },
       "end": {
-        "line": 27,
+        "line": 33,
         "column": 8
       }
     },
@@ -420,7 +492,7 @@
       },
       "end": {
         "line": 11,
-        "column": 58
+        "column": 65
       }
     },
     "uid-13": {
@@ -430,7 +502,7 @@
       },
       "end": {
         "line": 12,
-        "column": 26
+        "column": 58
       }
     },
     "uid-14": {
@@ -440,7 +512,7 @@
       },
       "end": {
         "line": 13,
-        "column": 63
+        "column": 26
       }
     },
     "uid-15": {
@@ -450,7 +522,7 @@
       },
       "end": {
         "line": 14,
-        "column": 73
+        "column": 63
       }
     },
     "uid-16": {
@@ -470,7 +542,7 @@
       },
       "end": {
         "line": 16,
-        "column": 65
+        "column": 73
       }
     },
     "uid-18": {
@@ -480,7 +552,7 @@
       },
       "end": {
         "line": 17,
-        "column": 26
+        "column": 65
       }
     },
     "uid-19": {
@@ -490,7 +562,7 @@
       },
       "end": {
         "line": 18,
-        "column": 56
+        "column": 83
       }
     },
     "uid-20": {
@@ -500,7 +572,7 @@
       },
       "end": {
         "line": 19,
-        "column": 76
+        "column": 26
       }
     },
     "uid-21": {
@@ -510,7 +582,7 @@
       },
       "end": {
         "line": 20,
-        "column": 73
+        "column": 56
       }
     },
     "uid-22": {
@@ -520,7 +592,7 @@
       },
       "end": {
         "line": 21,
-        "column": 72
+        "column": 76
       }
     },
     "uid-23": {
@@ -530,7 +602,7 @@
       },
       "end": {
         "line": 22,
-        "column": 74
+        "column": 73
       }
     },
     "uid-24": {
@@ -540,7 +612,7 @@
       },
       "end": {
         "line": 23,
-        "column": 26
+        "column": 72
       }
     },
     "uid-25": {
@@ -549,17 +621,77 @@
         "column": 4
       },
       "end": {
-        "line": 26,
-        "column": 10
+        "line": 24,
+        "column": 74
       }
     },
     "uid-26": {
       "start": {
         "line": 25,
-        "column": 6
+        "column": 4
       },
       "end": {
         "line": 25,
+        "column": 83
+      }
+    },
+    "uid-27": {
+      "start": {
+        "line": 26,
+        "column": 4
+      },
+      "end": {
+        "line": 26,
+        "column": 72
+      }
+    },
+    "uid-28": {
+      "start": {
+        "line": 27,
+        "column": 4
+      },
+      "end": {
+        "line": 27,
+        "column": 80
+      }
+    },
+    "uid-29": {
+      "start": {
+        "line": 28,
+        "column": 4
+      },
+      "end": {
+        "line": 28,
+        "column": 76
+      }
+    },
+    "uid-30": {
+      "start": {
+        "line": 29,
+        "column": 4
+      },
+      "end": {
+        "line": 29,
+        "column": 26
+      }
+    },
+    "uid-31": {
+      "start": {
+        "line": 30,
+        "column": 4
+      },
+      "end": {
+        "line": 32,
+        "column": 10
+      }
+    },
+    "uid-32": {
+      "start": {
+        "line": 31,
+        "column": 6
+      },
+      "end": {
+        "line": 31,
         "column": 52
       }
     }

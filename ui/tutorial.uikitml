@@ -9,18 +9,24 @@
     <div font-size="12" color="#aaaaaa">A/D or Left/Right: Move laterally</div>
     <div font-size="12" color="#aaaaaa">W/S or Up/Down: Change altitude</div>
     <div font-size="12" color="#aaaaaa">Space/E/K: Fire lasers</div>
+    <div font-size="12" color="#aaaaaa">Q/F: Launch missile</div>
     <div font-size="12" color="#aaaaaa">Esc/P: Pause</div>
     <div height="4"></div>
     <div font-size="13" color="#00aaaa">-- VR Controls --</div>
     <div font-size="12" color="#aaaaaa">Right stick: Move laterally</div>
     <div font-size="12" color="#aaaaaa">Left stick: Change altitude</div>
     <div font-size="12" color="#aaaaaa">Right trigger: Fire</div>
+    <div font-size="12" color="#aaaaaa">Right squeeze / Left trigger: Missile</div>
     <div height="4"></div>
     <div font-size="13" color="#ff8800">-- Tips --</div>
     <div font-size="12" color="#aaaaaa">Fly over walls or through gaps</div>
     <div font-size="12" color="#aaaaaa">Destroy fuel tanks for fuel</div>
     <div font-size="12" color="#aaaaaa">Watch your altitude shadow</div>
     <div font-size="12" color="#aaaaaa">Collect power-ups for boosts</div>
+    <div font-size="12" color="#aaaaaa">Avoid electric barriers (they cycle!)</div>
+    <div font-size="12" color="#aaaaaa">Mines explode on proximity</div>
+    <div font-size="12" color="#aaaaaa">Missiles do heavy damage to bosses</div>
+    <div font-size="12" color="#aaaaaa">Check radar for nearby threats</div>
     <div height="8"></div>
     <div name="btn-tutorial-back" background-color="#444444" border-radius="8" padding="10" width="180" align-items="center" cursor="pointer">
       <div font-size="14" color="#aaaaaa">Back</div>
