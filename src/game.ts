@@ -243,6 +243,28 @@ class AudioEngine {
       o.connect(g); g.gain.value = this.sfxVol * 0.8;
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
       o.start(now); o.stop(now + 0.5);
+    } else if (type === 'dive') {
+      // Descending whistle for dive bomber
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(1500, now);
+      o.frequency.exponentialRampToValueAtTime(200, now + 0.6);
+      o.connect(g); g.gain.value = this.sfxVol * 0.6;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
+      o.start(now); o.stop(now + 0.65);
+    } else if (type === 'bonus') {
+      // Celebratory ascending triple tone
+      const notes = [440, 660, 880];
+      notes.forEach((freq, i) => {
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.type = 'sine';
+        o2.frequency.value = freq;
+        g2.gain.value = this.sfxVol * 0.3;
+        o2.connect(g2); g2.connect(this.masterGain!);
+        g2.gain.exponentialRampToValueAtTime(0.01, now + 0.1 * i + 0.3);
+        o2.start(now + 0.1 * i); o2.stop(now + 0.1 * i + 0.3);
+      });
     }
   }
 
@@ -317,6 +339,7 @@ interface LightStrip { mesh: Mesh; z: number; side: number; }
 interface Formation { fighters: EnemyFighter[]; centerZ: number; pattern: 'v' | 'line' | 'diamond'; alive: boolean; }
 interface GroundTarget { group: Group; z: number; lane: number; alive: boolean; hp: number; maxHp: number; type: 'hangar' | 'radar' | 'depot'; }
 interface CheckpointMarker { group: Group; z: number; reached: boolean; }
+interface DiveBomber { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; phase: 'hover' | 'dive'; diveTimer: number; targetX: number; targetY: number; }
 
 interface GameState {
   screen: GameScreen;
@@ -372,6 +395,9 @@ interface GameState {
   checkpointsReached: number;
   groundTargetsDestroyed: number;
   formationsDestroyed: number;
+  bonusActive: boolean;
+  bonusTimer: number;
+  diveBombersKilled: number;
 }
 
 const state: GameState = {
@@ -393,6 +419,7 @@ const state: GameState = {
   weaponLevel: 1, checkpoint: 0, lastCheckpointZ: 0,
   alertText: '', alertTimer: 0,
   checkpointsReached: 0, groundTargetsDestroyed: 0, formationsDestroyed: 0,
+  bonusActive: false, bonusTimer: 0, diveBombersKilled: 0,
 };
 
 // ───── Scene Objects ─────
@@ -421,6 +448,7 @@ const radarDots: Mesh[] = [];
 const formations: Formation[] = [];
 const groundTargets: GroundTarget[] = [];
 const checkpointMarkers: CheckpointMarker[] = [];
+const diveBombers: DiveBomber[] = [];
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -894,6 +922,42 @@ function createCheckpoint(z: number): Group {
   return g;
 }
 
+function createDiveBomberMesh(): Group {
+  const g = new Group();
+  // Sleek triangular body
+  const body = new Mesh(new ConeGeometry(0.35, 1.0, 3), new MeshStandardMaterial({ color: 0xff0066, emissive: new Color(0xff0066), emissiveIntensity: 0.5, metalness: 0.7, roughness: 0.2 }));
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  // Delta wings
+  const wing = new Mesh(new BoxGeometry(1.6, 0.03, 0.6), new MeshStandardMaterial({ color: 0xcc0044, emissive: new Color(0xcc0044), emissiveIntensity: 0.3, metalness: 0.6 }));
+  wing.position.z = 0.15;
+  g.add(wing);
+  // Warning lights (pulse when diving)
+  [-0.4, 0.4].forEach(x => {
+    const light = new Mesh(new SphereGeometry(0.06, 6, 4), new MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.8 }));
+    light.position.set(x, -0.05, 0.2);
+    g.add(light);
+  });
+  // Engine glow
+  const eng = new Mesh(new SphereGeometry(0.12, 6, 4), new MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.7 }));
+  eng.position.z = 0.5;
+  g.add(eng);
+  return g;
+}
+
+function createBonusRing(z: number): Group {
+  const c = getColor();
+  const g = new Group();
+  const ring = new Mesh(new RingGeometry(2.0, 2.3, 16), new MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.5, side: 2 }));
+  ring.position.y = 2;
+  g.add(ring);
+  const inner = new Mesh(new RingGeometry(1.5, 1.6, 16), new MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.3, side: 2 }));
+  inner.position.y = 2;
+  g.add(inner);
+  g.position.z = z;
+  return g;
+}
+
 function spawnFormation(baseZ: number) {
   const patterns: Array<'v' | 'line' | 'diamond'> = ['v', 'line', 'diamond'];
   const pattern = patterns[Math.floor(Math.random() * patterns.length)];
@@ -1135,6 +1199,19 @@ function spawnOpenSection() {
   if (lvl >= 2 && Math.random() < 0.3 + lvl * 0.04) {
     spawnFormation(z - 20 - Math.random() * 10);
   }
+  // Dive bombers (level 3+)
+  if (lvl >= 3 && Math.random() < 0.25 + lvl * 0.03) {
+    const dbCount = 1 + Math.floor(lvl / 5);
+    for (let i = 0; i < dbCount; i++) {
+      const dbg = createDiveBomberMesh();
+      const dbx = (Math.random() - 0.5) * 6;
+      const dby = 4 + Math.random() * 2;
+      const dbz = z - 8 - i * 5 - Math.random() * 3;
+      dbg.position.set(dbx, dby, dbz);
+      world.scene.add(dbg);
+      diveBombers.push({ group: dbg, z: dbz, x: dbx, y: dby, alive: true, hp: 2 + Math.floor(lvl / 4), phase: 'hover', diveTimer: 2 + Math.random() * 2, targetX: 0, targetY: 0 });
+    }
+  }
   fortressSpawnZ -= 30;
 }
 
@@ -1195,6 +1272,9 @@ function cleanupBehind() {
   for (let i = checkpointMarkers.length - 1; i >= 0; i--) {
     if (checkpointMarkers[i].z > limit) { world.scene.remove(checkpointMarkers[i].group); checkpointMarkers.splice(i, 1); }
   }
+  for (let i = diveBombers.length - 1; i >= 0; i--) {
+    if (diveBombers[i].z > limit) { world.scene.remove(diveBombers[i].group); diveBombers.splice(i, 1); }
+  }
   // Clean dead formations
   for (let i = formations.length - 1; i >= 0; i--) {
     const f = formations[i];
@@ -1223,6 +1303,7 @@ function resetGame() {
   state.weaponLevel = 1; state.checkpoint = 0; state.lastCheckpointZ = 0;
   state.alertText = ''; state.alertTimer = 0;
   state.groundTargetsDestroyed = 0; state.formationsDestroyed = 0;
+  state.bonusActive = false; state.bonusTimer = 0; state.diveBombersKilled = 0;
   playerX = 0;
   fortressSpawnZ = -20;
   // Clear all objects
@@ -1245,6 +1326,7 @@ function resetGame() {
   if (boss) { world.scene.remove(boss.group); boss = null; }
   groundTargets.forEach(g => world.scene.remove(g.group)); groundTargets.length = 0;
   checkpointMarkers.forEach(c => world.scene.remove(c.group)); checkpointMarkers.length = 0;
+  diveBombers.forEach(d => world.scene.remove(d.group)); diveBombers.length = 0;
   formations.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
@@ -1683,6 +1765,10 @@ export class GameSystem extends createSystem({
     this.updateFormations(dt);
     // ── Update checkpoints ──
     this.updateCheckpoints(dt);
+    // ── Update dive bombers ──
+    this.updateDiveBombers(dt);
+    // ── Update bonus corridor ──
+    this.updateBonusCorridor(dt);
     // ── Alert timer ──
     if (state.alertTimer > 0) state.alertTimer -= dt;
     // Cleanup
@@ -1765,6 +1851,23 @@ export class GameSystem extends createSystem({
           }
         }
 
+        // vs dive bombers
+        if (!hit) for (const db of diveBombers) {
+          if (!db.alive || hit) continue;
+          if (Math.abs(b.mesh.position.x - db.group.position.x) < 0.5 && Math.abs(b.mesh.position.y - db.group.position.y) < 0.5 && Math.abs(b.mesh.position.z - db.group.position.z) < 0.5) {
+            db.hp -= dmg;
+            if (db.hp <= 0) {
+              db.alive = false; db.group.visible = false;
+              addScore(500); addCombo(); state.totalKills++; state.diveBombersKilled++;
+              spawnParticles(db.group.position.x, db.group.position.y, db.group.position.z, 0xff0066, 18);
+              spawnFloatingScore(db.group.position.x, db.group.position.y + 0.5, db.group.position.z, 500);
+              audio.play('explode');
+              if (b.isMissile) triggerScreenShake(0.2, 0.25);
+            } else audio.play('hit');
+            hit = true;
+          }
+        }
+
         // vs ground targets
         if (!hit) for (const gt of groundTargets) {
           if (!gt.alive || hit) continue;
@@ -1825,6 +1928,22 @@ export class GameSystem extends createSystem({
                 spawnFloatingScore(boss.group.position.x, boss.group.position.y + 1, boss.group.position.z, 2000);
                 audio.play('explode');
                 triggerScreenShake(0.5, 0.6);
+                // Chain explosions from boss
+                for (let chain = 0; chain < 4; chain++) {
+                  setTimeout(() => {
+                    if (boss && !boss.alive) {
+                      const cx = boss.group.position.x + (Math.random() - 0.5) * 3;
+                      const cy = boss.group.position.y + (Math.random() - 0.5) * 1;
+                      const cz = boss.group.position.z + (Math.random() - 0.5) * 2;
+                      spawnParticles(cx, cy, cz, 0xff4400, 8);
+                    }
+                  }, chain * 150);
+                }
+                // Trigger bonus corridor
+                state.bonusActive = true;
+                state.bonusTimer = 8;
+                audio.play('bonus');
+                showAlert('BONUS CORRIDOR! COLLECT EVERYTHING!');
               }
             }
             hit = true;
@@ -2236,6 +2355,102 @@ export class GameSystem extends createSystem({
     }
   }
 
+  private updateDiveBombers(dt: number) {
+    for (const db of diveBombers) {
+      if (!db.alive) continue;
+      db.group.position.z = db.z - state.scrollZ;
+
+      if (db.phase === 'hover') {
+        // Hover high, waiting to dive
+        db.group.position.x = db.x + Math.sin(this.time * 2 + db.z) * 1.5;
+        db.group.position.y = db.y + Math.sin(this.time * 3) * 0.3;
+        db.group.rotation.x = 0;
+        // Warning light pulse
+        db.group.children.forEach((child, idx) => {
+          if (idx === 2 || idx === 3) {
+            (child as Mesh).scale.setScalar(0.8 + Math.sin(this.time * 6) * 0.3);
+          }
+        });
+        db.diveTimer -= dt;
+        if (db.diveTimer <= 0 && db.group.position.z > -15 && db.group.position.z < 8) {
+          // Lock on to player position and dive
+          db.phase = 'dive';
+          db.targetX = playerGroup.position.x;
+          db.targetY = playerGroup.position.y;
+          audio.play('dive');
+          showAlert('DIVE BOMBER INCOMING!');
+        }
+      } else {
+        // Diving at player's last known position
+        const diveSpeed = 12;
+        const dx = db.targetX - db.group.position.x;
+        const dy = (db.targetY - 0.5) - db.group.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0.1) {
+          db.group.position.x += (dx / dist) * diveSpeed * dt;
+          db.group.position.y += (dy / dist) * diveSpeed * dt;
+        }
+        // Nose-down rotation during dive
+        db.group.rotation.x = Math.min(Math.PI / 3, db.group.rotation.x + dt * 4);
+        // Warning lights flash rapidly
+        db.group.children.forEach((child, idx) => {
+          if (idx === 2 || idx === 3) {
+            (child as Mesh).visible = Math.sin(this.time * 20) > 0;
+          }
+        });
+        // Engine trail during dive
+        if (Math.random() < 0.5) {
+          spawnParticles(db.group.position.x, db.group.position.y + 0.3, db.group.position.z + 0.3, 0xff4400, 1);
+        }
+        // Collision with player
+        if (Math.abs(playerGroup.position.x - db.group.position.x) < 0.6 && Math.abs(playerGroup.position.y - db.group.position.y) < 0.5 && Math.abs(playerGroup.position.z - db.group.position.z) < 0.6) {
+          db.alive = false; db.group.visible = false;
+          playerHit();
+          spawnParticles(db.group.position.x, db.group.position.y, db.group.position.z, 0xff0066, 20);
+          audio.play('explode');
+          triggerScreenShake(0.3, 0.35);
+        }
+        // If it misses and goes below floor, destroy it
+        if (db.group.position.y < 0) {
+          db.alive = false; db.group.visible = false;
+          spawnParticles(db.group.position.x, 0.1, db.group.position.z, 0xff0066, 10);
+          audio.play('explode');
+        }
+      }
+    }
+  }
+
+  private updateBonusCorridor(dt: number) {
+    if (!state.bonusActive) return;
+    state.bonusTimer -= dt;
+    if (state.bonusTimer <= 0) {
+      state.bonusActive = false;
+      showAlert('BONUS OVER!');
+      return;
+    }
+    // Spawn bonus collectibles periodically
+    const spawnRate = 0.3;
+    if (Math.random() < spawnRate) {
+      const types: Array<'shield' | 'rapid' | 'fuel' | 'spread' | 'missile' | 'weapon'> = ['fuel', 'fuel', 'missile', 'weapon', 'shield', 'rapid'];
+      const pt = types[Math.floor(Math.random() * types.length)];
+      const pm = createPowerUpMesh(pt);
+      const bx = (Math.random() - 0.5) * 6;
+      const bz = playerGroup.position.z - 15 - Math.random() * 10;
+      pm.position.set(bx, 1 + Math.random() * 1.5, bz);
+      world.scene.add(pm);
+      powerUps.push({ mesh: pm, z: bz + state.scrollZ, lane: 0, type: pt, alive: true });
+    }
+    // Spawn bonus rings for visual flair
+    if (Math.random() < 0.1) {
+      const ring = createBonusRing(0);
+      const rz = playerGroup.position.z - 20 - Math.random() * 5;
+      ring.position.z = rz;
+      world.scene.add(ring);
+      // Ring fades and gets cleaned up via particles naturally
+      setTimeout(() => { world.scene.remove(ring); }, 3000);
+    }
+  }
+
   private updateHUD() {
     const doc = this.docs['hud']?.doc;
     if (!doc) return;
@@ -2283,6 +2498,8 @@ export class GameSystem extends createSystem({
       const bars = '█'.repeat(barsCount) + '░'.repeat(20 - barsCount);
       const shieldInfo = boss.shieldActive ? ` [SHIELD x${boss.shieldHp}]` : '';
       setText('hud-boss', `BOSS ${bars} ${hpPct}%${shieldInfo}`);
+    } else if (state.bonusActive) {
+      setText('hud-boss', `⭐ BONUS TIME! ${Math.ceil(state.bonusTimer)}s ⭐`);
     } else if (state.alertTimer <= 0) {
       setText('hud-boss', '');
     }
@@ -2378,6 +2595,8 @@ export class GameSystem extends createSystem({
     patrolDrones.forEach(d => { if (d.alive) addDot(d.group.position.x, d.group.position.z, 0xffaa00); });
     // Mines (red, smaller)
     mines.forEach(m => { if (m.alive) addDot(m.mesh.position.x, m.mesh.position.z, 0xff4400); });
+    // Dive bombers (pink)
+    diveBombers.forEach(db => { if (db.alive) addDot(db.group.position.x, db.group.position.z, 0xff0066); });
     // Boss (big red)
     if (boss && boss.alive) {
       const rx = (boss.group.position.x - playerGroup.position.x) * radarScale;
@@ -2443,10 +2662,14 @@ export class GameSystem extends createSystem({
         };
         setText('result-score', `Final Score: ${state.score}`);
         setText('result-high', `High Score: ${state.highScore}`);
-        setText('result-level', `Level Reached: ${state.level}`);
-        setText('result-kills', `Enemies Destroyed: ${state.totalKills}`);
+        setText('result-level', `Level: ${state.level}`);
+        setText('result-kills', `Kills: ${state.totalKills}`);
         setText('result-combo', `Best Combo: x${state.maxCombo}`);
         setText('result-distance', `Distance: ${Math.floor(state.totalDistance)}m`);
+        setText('result-checkpoints', `Checkpoints: ${state.checkpointsReached}`);
+        setText('result-ground', `Ground Targets: ${state.groundTargetsDestroyed}`);
+        setText('result-formations', `Formations: ${state.formationsDestroyed}`);
+        setText('result-missiles', `Missiles Used: ${state.totalMissilesUsed}`);
       }
     }
 
@@ -2461,14 +2684,18 @@ export class GameSystem extends createSystem({
           const stored = localStorage.getItem('neon-fortress-stats');
           const s = stored ? JSON.parse(stored) : {};
           setText('stat-highscore', `High Score: ${s.highScore || 0}`);
-          setText('stat-games', `Games Played: ${s.gamesPlayed || 0}`);
-          setText('stat-kills', `Total Kills: ${s.totalKills || 0}`);
-          setText('stat-fuel', `Total Fuel: ${s.totalFuel || 0}`);
-          setText('stat-shots', `Total Shots: ${s.totalShots || 0}`);
+          setText('stat-games', `Games: ${s.gamesPlayed || 0}`);
+          setText('stat-kills', `Kills: ${s.totalKills || 0}`);
+          setText('stat-fuel', `Fuel: ${s.totalFuel || 0}`);
+          setText('stat-shots', `Shots: ${s.totalShots || 0}`);
           setText('stat-powerups', `Power-ups: ${s.totalPowerups || 0}`);
-          setText('stat-bosses', `Bosses Beaten: ${s.bossesDefeated || 0}`);
+          setText('stat-bosses', `Bosses: ${s.bossesDefeated || 0}`);
           setText('stat-combo', `Best Combo: x${s.bestCombo || 0}`);
-          setText('stat-distance', `Total Distance: ${Math.floor(s.totalDistance || 0)}m`);
+          setText('stat-distance', `Distance: ${Math.floor(s.totalDistance || 0)}m`);
+          setText('stat-missiles', `Missiles: ${s.totalMissiles || 0}`);
+          setText('stat-checkpoints', `Checkpoints: ${s.checkpointsReached || 0}`);
+          setText('stat-ground', `Ground Tgts: ${s.groundTargetsDestroyed || 0}`);
+          setText('stat-formations', `Formations: ${s.formationsDestroyed || 0}`);
         } catch {}
       }
     }

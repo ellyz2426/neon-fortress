@@ -1,15 +1,25 @@
 <panel>
-  <div background-color="#000000cc" border-radius="16" padding="24" width="440" flex-direction="column" gap="10" align-items="center">
+  <div background-color="#000000cc" border-radius="16" padding="24" width="460" flex-direction="column" gap="8" align-items="center">
     <div font-size="28" font-weight="bold" color="#ff4444">MISSION OVER</div>
-    <div height="6"></div>
+    <div height="4"></div>
     <div name="result-score" font-size="22" font-weight="bold" color="#00ffff">Final Score: 0</div>
     <div name="result-high" font-size="14" color="#ffcc00">High Score: 0</div>
-    <div height="4"></div>
-    <div name="result-level" font-size="14" color="#aaaaaa">Level Reached: 1</div>
-    <div name="result-kills" font-size="14" color="#aaaaaa">Enemies Destroyed: 0</div>
-    <div name="result-combo" font-size="14" color="#aaaaaa">Best Combo: x0</div>
-    <div name="result-distance" font-size="14" color="#aaaaaa">Distance: 0m</div>
-    <div height="8"></div>
+    <div height="2"></div>
+    <div flex-direction="row" justify-content="space-between" width="400">
+      <div flex-direction="column" gap="4">
+        <div name="result-level" font-size="13" color="#aaaaaa">Level: 1</div>
+        <div name="result-kills" font-size="13" color="#aaaaaa">Kills: 0</div>
+        <div name="result-combo" font-size="13" color="#aaaaaa">Best Combo: x0</div>
+        <div name="result-distance" font-size="13" color="#aaaaaa">Distance: 0m</div>
+      </div>
+      <div flex-direction="column" gap="4">
+        <div name="result-checkpoints" font-size="13" color="#44ff44">Checkpoints: 0</div>
+        <div name="result-ground" font-size="13" color="#ff8800">Ground Targets: 0</div>
+        <div name="result-formations" font-size="13" color="#ffcc00">Formations: 0</div>
+        <div name="result-missiles" font-size="13" color="#44ffaa">Missiles Used: 0</div>
+      </div>
+    </div>
+    <div height="6"></div>
     <div name="btn-retry" background-color="#00aaaa" border-radius="8" padding="12" width="220" align-items="center" cursor="pointer">
       <div font-size="18" font-weight="bold" color="#000000">Retry</div>
     </div>
