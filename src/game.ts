@@ -185,6 +185,64 @@ class AudioEngine {
       o.connect(g);
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
       o.start(now); o.stop(now + 0.5);
+    } else if (type === 'gate') {
+      // Heavy metallic crash for gate destruction
+      const bufSize = ctx.sampleRate * 0.5;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 0.5);
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.connect(g);
+      g.gain.value = this.sfxVol * 1.2;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+      src.start(now);
+    } else if (type === 'checkpoint') {
+      // Ascending chime
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(660, now);
+      o.frequency.setValueAtTime(880, now + 0.1);
+      o.frequency.setValueAtTime(1100, now + 0.2);
+      o.connect(g);
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      o.start(now); o.stop(now + 0.35);
+    } else if (type === 'weapon_upgrade') {
+      // Power-up ascending dual tone
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(440, now);
+      o.frequency.exponentialRampToValueAtTime(1320, now + 0.25);
+      o.connect(g);
+      const o2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.setValueAtTime(660, now);
+      o2.frequency.exponentialRampToValueAtTime(1760, now + 0.25);
+      g2.gain.value = this.sfxVol * 0.6;
+      o2.connect(g2); g2.connect(this.masterGain!);
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      g2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      o.start(now); o.stop(now + 0.3);
+      o2.start(now); o2.stop(now + 0.3);
+    } else if (type === 'formation') {
+      // Warning klaxon
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(600, now);
+      o.frequency.setValueAtTime(400, now + 0.15);
+      o.frequency.setValueAtTime(600, now + 0.3);
+      o.connect(g);
+      g.gain.value = this.sfxVol * 0.5;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      o.start(now); o.stop(now + 0.4);
+    } else if (type === 'bomb') {
+      // Low rumble for bombing ground targets
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(80, now);
+      o.frequency.exponentialRampToValueAtTime(40, now + 0.4);
+      o.connect(g); g.gain.value = this.sfxVol * 0.8;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+      o.start(now); o.stop(now + 0.5);
     }
   }
 
@@ -246,7 +304,7 @@ interface Wall { group: Group; z: number; height: number; lane: number; moving?:
 interface FuelTank { mesh: Group; z: number; lane: number; alive: boolean; }
 interface Turret { group: Group; z: number; lane: number; alive: boolean; cooldown: number; hp: number; }
 interface EnemyFighter { group: Group; z: number; x: number; y: number; alive: boolean; cooldown: number; hp: number; vx: number; }
-interface PowerUp { mesh: Group; z: number; lane: number; type: 'shield' | 'rapid' | 'fuel' | 'spread' | 'magnet' | 'missile'; alive: boolean; }
+interface PowerUp { mesh: Group; z: number; lane: number; type: 'shield' | 'rapid' | 'fuel' | 'spread' | 'magnet' | 'missile' | 'weapon'; alive: boolean; }
 interface Particle { mesh: Mesh; vx: number; vy: number; vz: number; life: number; maxLife: number; }
 interface BossShip { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; maxHp: number; cooldown: number; phase: number; shieldActive: boolean; shieldHp: number; shieldMesh: Mesh | null; phaseTimer: number; spawnCooldown: number; }
 interface PatrolDrone { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; cooldown: number; patternAngle: number; patternRadius: number; centerX: number; centerY: number; }
@@ -256,6 +314,9 @@ interface FloatingScore { mesh: Group; life: number; vy: number; }
 interface WarningArrow { mesh: Group; life: number; targetZ: number; targetX: number; }
 interface CeilingBeam { mesh: Mesh; z: number; }
 interface LightStrip { mesh: Mesh; z: number; side: number; }
+interface Formation { fighters: EnemyFighter[]; centerZ: number; pattern: 'v' | 'line' | 'diamond'; alive: boolean; }
+interface GroundTarget { group: Group; z: number; lane: number; alive: boolean; hp: number; maxHp: number; type: 'hangar' | 'radar' | 'depot'; }
+interface CheckpointMarker { group: Group; z: number; reached: boolean; }
 
 interface GameState {
   screen: GameScreen;
@@ -302,6 +363,15 @@ interface GameState {
   screenShakeIntensity: number;
   bossWarningShown: boolean;
   totalMissilesUsed: number;
+  // Round 3 additions
+  weaponLevel: number;
+  checkpoint: number;
+  lastCheckpointZ: number;
+  alertText: string;
+  alertTimer: number;
+  checkpointsReached: number;
+  groundTargetsDestroyed: number;
+  formationsDestroyed: number;
 }
 
 const state: GameState = {
@@ -320,6 +390,9 @@ const state: GameState = {
   missileAmmo: 3, missileCooldown: 0,
   screenShakeTimer: 0, screenShakeIntensity: 0,
   bossWarningShown: false, totalMissilesUsed: 0,
+  weaponLevel: 1, checkpoint: 0, lastCheckpointZ: 0,
+  alertText: '', alertTimer: 0,
+  checkpointsReached: 0, groundTargetsDestroyed: 0, formationsDestroyed: 0,
 };
 
 // ───── Scene Objects ─────
@@ -345,6 +418,9 @@ const warningArrows: WarningArrow[] = [];
 const ceilingBeams: CeilingBeam[] = [];
 const lightStrips: LightStrip[] = [];
 const radarDots: Mesh[] = [];
+const formations: Formation[] = [];
+const groundTargets: GroundTarget[] = [];
+const checkpointMarkers: CheckpointMarker[] = [];
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -593,6 +669,7 @@ function createPowerUpMesh(type: string): Group {
   else if (type === 'spread') color = 0xffff00;
   else if (type === 'magnet') color = 0xff44ff;
   else if (type === 'missile') color = 0x44ffaa;
+  else if (type === 'weapon') color = 0xffff44;
   const sphere = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshStandardMaterial({ color, emissive: new Color(color), emissiveIntensity: 0.6 }));
   g.add(sphere);
   const ring = new Mesh(new CylinderGeometry(0.3, 0.3, 0.03, 12), new MeshBasicMaterial({ color, transparent: true, opacity: 0.5 }));
@@ -603,6 +680,12 @@ function createPowerUpMesh(type: string): Group {
     missile.position.y = 0.35;
     missile.rotation.x = Math.PI;
     g.add(missile);
+  }
+  if (type === 'weapon') {
+    // Add arrows indicating upgrade
+    const arrow = new Mesh(new ConeGeometry(0.08, 0.15, 4), new MeshBasicMaterial({ color: 0xffffff }));
+    arrow.position.y = 0.35;
+    g.add(arrow);
   }
   return g;
 }
@@ -741,6 +824,110 @@ function spawnWarningArrow(x: number, z: number) {
   g.position.set(x, 5, 0);
   world.scene.add(g);
   warningArrows.push({ mesh: g, life: 2, targetZ: z, targetX: x });
+}
+
+// ───── Ground Targets ─────
+function createGroundTargetMesh(type: 'hangar' | 'radar' | 'depot'): Group {
+  const c = getColor();
+  const g = new Group();
+  if (type === 'hangar') {
+    const base = new Mesh(new BoxGeometry(1.2, 0.3, 0.8), new MeshStandardMaterial({ color: 0x555566, emissive: new Color(0x334455), emissiveIntensity: 0.2, metalness: 0.7, roughness: 0.3 }));
+    base.position.y = 0.15;
+    g.add(base);
+    const roof = new Mesh(new CylinderGeometry(0.6, 0.6, 1.2, 6, 1, false, 0, Math.PI), new MeshStandardMaterial({ color: 0x445566, emissive: new Color(0x223344), emissiveIntensity: 0.15, metalness: 0.6 }));
+    roof.rotation.z = Math.PI / 2;
+    roof.position.y = 0.3;
+    g.add(roof);
+    const wireGeo = new EdgesGeometry(new BoxGeometry(1.22, 0.32, 0.82));
+    g.add(new LineSegments(wireGeo, new LineBasicMaterial({ color: c.accent, transparent: true, opacity: 0.5 })));
+  } else if (type === 'radar') {
+    const pole = new Mesh(new CylinderGeometry(0.06, 0.06, 0.7, 6), new MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.2 }));
+    pole.position.y = 0.35;
+    g.add(pole);
+    const dish = new Mesh(new ConeGeometry(0.4, 0.15, 8, 1, true), new MeshStandardMaterial({ color: 0xaaaacc, emissive: new Color(c.primary), emissiveIntensity: 0.3, metalness: 0.5, side: 2 }));
+    dish.position.y = 0.7;
+    g.add(dish);
+    const base = new Mesh(new BoxGeometry(0.5, 0.1, 0.5), new MeshStandardMaterial({ color: 0x555555, metalness: 0.7 }));
+    base.position.y = 0.05;
+    g.add(base);
+  } else {
+    const tank1 = new Mesh(new CylinderGeometry(0.2, 0.2, 0.5, 8), new MeshStandardMaterial({ color: 0xff6600, emissive: new Color(0xff4400), emissiveIntensity: 0.3 }));
+    tank1.rotation.z = Math.PI / 2;
+    tank1.position.set(-0.25, 0.3, 0);
+    g.add(tank1);
+    const tank2 = new Mesh(new CylinderGeometry(0.2, 0.2, 0.5, 8), new MeshStandardMaterial({ color: 0xff6600, emissive: new Color(0xff4400), emissiveIntensity: 0.3 }));
+    tank2.rotation.z = Math.PI / 2;
+    tank2.position.set(0.25, 0.3, 0);
+    g.add(tank2);
+    const base = new Mesh(new BoxGeometry(0.9, 0.1, 0.6), new MeshStandardMaterial({ color: 0x444444, metalness: 0.7 }));
+    base.position.y = 0.05;
+    g.add(base);
+    const pipe = new Mesh(new CylinderGeometry(0.03, 0.03, 0.8, 6), new MeshStandardMaterial({ color: 0x666666 }));
+    pipe.position.set(0, 0.2, 0.35);
+    pipe.rotation.x = Math.PI / 2;
+    g.add(pipe);
+  }
+  return g;
+}
+
+function createCheckpoint(z: number): Group {
+  const c = getColor();
+  const g = new Group();
+  // Gate posts
+  [-3.5, 3.5].forEach(x => {
+    const post = new Mesh(new CylinderGeometry(0.08, 0.08, 4, 6), new MeshStandardMaterial({ color: c.primary, emissive: new Color(c.primary), emissiveIntensity: 0.3 }));
+    post.position.set(x, 2, 0);
+    g.add(post);
+    const topLight = new Mesh(new SphereGeometry(0.12, 6, 4), new MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.7 }));
+    topLight.position.set(x, 4.1, 0);
+    g.add(topLight);
+  });
+  // Cross bar
+  const bar = new Mesh(new BoxGeometry(7, 0.06, 0.06), new MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.5 }));
+  bar.position.y = 4;
+  g.add(bar);
+  // Marker ring
+  const ring = new Mesh(new RingGeometry(2.5, 2.7, 16), new MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.3, side: 2 }));
+  ring.position.y = 2;
+  g.add(ring);
+  g.position.z = z;
+  return g;
+}
+
+function spawnFormation(baseZ: number) {
+  const patterns: Array<'v' | 'line' | 'diamond'> = ['v', 'line', 'diamond'];
+  const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+  const centerX = (Math.random() - 0.5) * 4;
+  const centerY = 1.5 + Math.random() * 1;
+  const formationFighters: EnemyFighter[] = [];
+
+  let offsets: Array<[number, number]> = [];
+  if (pattern === 'v') {
+    offsets = [[0, 0], [-1.2, 1.5], [1.2, 1.5], [-2.4, 3], [2.4, 3]];
+  } else if (pattern === 'line') {
+    offsets = [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]];
+  } else {
+    offsets = [[0, 0], [-1.2, 1], [1.2, 1], [0, 2], [-1.2, -1], [1.2, -1]];
+  }
+
+  for (const [ox, oz] of offsets) {
+    const eg = createEnemyFighter();
+    const ex = centerX + ox;
+    const ey = centerY;
+    const ez = baseZ - oz;
+    eg.position.set(ex, ey, ez);
+    world.scene.add(eg);
+    const fighter: EnemyFighter = { group: eg, z: ez + state.scrollZ, x: ex, y: ey, alive: true, cooldown: 3 + Math.random() * 2, hp: 2 + Math.floor(state.level / 3), vx: 0 };
+    enemies.push(fighter);
+    formationFighters.push(fighter);
+  }
+  formations.push({ fighters: formationFighters, centerZ: baseZ + state.scrollZ, pattern, alive: true });
+  showAlert('FORMATION INCOMING!');
+}
+
+function showAlert(text: string) {
+  state.alertText = text;
+  state.alertTimer = 2;
 }
 
 // ───── Environment ─────
@@ -887,12 +1074,23 @@ function spawnFortressSection() {
     // Power-ups (now includes missile ammo)
     if (Math.random() < 0.14) {
       const pl = Math.floor(Math.random() * 3) - 1;
-      const types: Array<'shield' | 'rapid' | 'fuel' | 'spread' | 'magnet' | 'missile'> = ['shield', 'rapid', 'fuel', 'spread', 'magnet', 'missile'];
+      const types: Array<'shield' | 'rapid' | 'fuel' | 'spread' | 'magnet' | 'missile' | 'weapon'> = ['shield', 'rapid', 'fuel', 'spread', 'magnet', 'missile', 'weapon'];
       const pt = types[Math.floor(Math.random() * types.length)];
-      const pm = createPowerUpMesh(pt);
+      const pm = createPowerUpMesh(pt === 'weapon' ? 'missile' : pt);
       pm.position.set(pl * 2.5, 1.5, rowZ - 3);
       world.scene.add(pm);
-      powerUps.push({ mesh: pm, z: rowZ - 3, lane: pl, type: pt, alive: true });
+      powerUps.push({ mesh: pm, z: rowZ - 3, lane: pl, type: pt as any, alive: true });
+    }
+    // Ground targets (hangars, radar dishes, fuel depots)
+    if (Math.random() < 0.18 + lvl * 0.02) {
+      const gtTypes: Array<'hangar' | 'radar' | 'depot'> = ['hangar', 'radar', 'depot'];
+      const gtType = gtTypes[Math.floor(Math.random() * gtTypes.length)];
+      const gtLane = Math.floor(Math.random() * 3) - 1;
+      const gt = createGroundTargetMesh(gtType);
+      gt.position.set(gtLane * 2.5, 0, rowZ - 2.5);
+      world.scene.add(gt);
+      const hp = gtType === 'hangar' ? 3 : gtType === 'depot' ? 2 : 1;
+      groundTargets.push({ group: gt, z: rowZ - 2.5, lane: gtLane, alive: true, hp, maxHp: hp, type: gtType });
     }
   }
   fortressSpawnZ -= 40;
@@ -933,6 +1131,10 @@ function spawnOpenSection() {
     world.scene.add(pm);
     powerUps.push({ mesh: pm, z: z - 15, lane: 0, type: pt, alive: true });
   }
+  // Formation attack (higher level)
+  if (lvl >= 2 && Math.random() < 0.3 + lvl * 0.04) {
+    spawnFormation(z - 20 - Math.random() * 10);
+  }
   fortressSpawnZ -= 30;
 }
 
@@ -950,6 +1152,7 @@ function spawnBoss() {
   audio.play('boss');
   spawnWarningArrow(0, bz);
   state.bossWarningShown = true;
+  showAlert('WARNING: BOSS APPROACHING!');
   fortressSpawnZ -= 40;
 }
 
@@ -986,6 +1189,22 @@ function cleanupBehind() {
   for (let i = lightStrips.length - 1; i >= 0; i--) {
     if (lightStrips[i].z > limit) { world.scene.remove(lightStrips[i].mesh); lightStrips.splice(i, 1); }
   }
+  for (let i = groundTargets.length - 1; i >= 0; i--) {
+    if (groundTargets[i].z > limit) { world.scene.remove(groundTargets[i].group); groundTargets.splice(i, 1); }
+  }
+  for (let i = checkpointMarkers.length - 1; i >= 0; i--) {
+    if (checkpointMarkers[i].z > limit) { world.scene.remove(checkpointMarkers[i].group); checkpointMarkers.splice(i, 1); }
+  }
+  // Clean dead formations
+  for (let i = formations.length - 1; i >= 0; i--) {
+    const f = formations[i];
+    f.alive = f.fighters.some(fighter => fighter.alive);
+    if (!f.alive) {
+      const allDead = f.fighters.every(fighter => !fighter.alive);
+      if (allDead) state.formationsDestroyed++;
+      formations.splice(i, 1);
+    }
+  }
 }
 
 // ───── Game Logic ─────
@@ -1001,6 +1220,9 @@ function resetGame() {
   state.missileAmmo = 3; state.missileCooldown = 0;
   state.screenShakeTimer = 0; state.screenShakeIntensity = 0;
   state.bossWarningShown = false; state.totalMissilesUsed = 0;
+  state.weaponLevel = 1; state.checkpoint = 0; state.lastCheckpointZ = 0;
+  state.alertText = ''; state.alertTimer = 0;
+  state.groundTargetsDestroyed = 0; state.formationsDestroyed = 0;
   playerX = 0;
   fortressSpawnZ = -20;
   // Clear all objects
@@ -1021,6 +1243,9 @@ function resetGame() {
   engineTrailParticles.forEach(p => world.scene.remove(p.mesh)); engineTrailParticles.length = 0;
   radarDots.forEach(d => world.scene.remove(d)); radarDots.length = 0;
   if (boss) { world.scene.remove(boss.group); boss = null; }
+  groundTargets.forEach(g => world.scene.remove(g.group)); groundTargets.length = 0;
+  checkpointMarkers.forEach(c => world.scene.remove(c.group)); checkpointMarkers.length = 0;
+  formations.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
 }
@@ -1045,6 +1270,7 @@ function playerHit() {
   }
   state.lives--;
   state.invincibleTimer = 2;
+  if (state.weaponLevel > 1) state.weaponLevel--;
   triggerScreenShake(0.3, 0.4);
   audio.play('death');
   spawnParticles(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z, getColor().accent, 20);
@@ -1070,7 +1296,8 @@ function shootBullet() {
     bullets.push({ mesh: b, vx: Math.sin(offsetAngle) * speed, vy: 0, vz: -speed, life: 2 });
   };
   spawnB(0, 0);
-  if (state.spreadShot) { spawnB(-0.3, -0.1); spawnB(0.3, 0.1); }
+  if (state.spreadShot || state.weaponLevel >= 3) { spawnB(-0.3, -0.1); spawnB(0.3, 0.1); }
+  if (state.weaponLevel >= 2) { spawnB(-0.15, 0); spawnB(0.15, 0); }
 }
 
 function shootMissile() {
@@ -1102,6 +1329,9 @@ function saveStats() {
     stats.bestCombo = Math.max(stats.bestCombo || 0, state.bestCombo);
     stats.totalDistance = (stats.totalDistance || 0) + state.totalDistance;
     stats.totalMissiles = (stats.totalMissiles || 0) + state.totalMissilesUsed;
+    stats.checkpointsReached = (stats.checkpointsReached || 0) + state.checkpointsReached;
+    stats.groundTargetsDestroyed = (stats.groundTargetsDestroyed || 0) + state.groundTargetsDestroyed;
+    stats.formationsDestroyed = (stats.formationsDestroyed || 0) + state.formationsDestroyed;
     localStorage.setItem('neon-fortress-stats', JSON.stringify(stats));
     state.highScore = stats.highScore;
   } catch {}
@@ -1380,6 +1610,7 @@ export class GameSystem extends createSystem({
     // Fuel
     const fuelRate = 3 * getDiffMult();
     state.fuel -= fuelRate * dt;
+    if (state.fuel <= 20 && state.fuel + fuelRate * dt > 20) showAlert('FUEL LOW!');
     if (state.fuel <= 0) { state.fuel = 0; playerHit(); }
 
     // Timers
@@ -1417,6 +1648,7 @@ export class GameSystem extends createSystem({
     if (newLevel > state.level) {
       state.level = newLevel;
       state.scrollSpeed = state.baseSpeed + state.level * 0.3;
+      showAlert(`LEVEL ${state.level}! SPEED INCREASING!`);
     }
     if (fortressSpawnZ > state.scrollZ - 80) {
       if (state.fortressSection) spawnFortressSection();
@@ -1445,6 +1677,14 @@ export class GameSystem extends createSystem({
     this.updateElectricBarriers(dt);
     // ── Update fortress visuals ──
     this.updateFortressVisuals(dt);
+    // ── Update ground targets ──
+    this.updateGroundTargets(dt);
+    // ── Update formations ──
+    this.updateFormations(dt);
+    // ── Update checkpoints ──
+    this.updateCheckpoints(dt);
+    // ── Alert timer ──
+    if (state.alertTimer > 0) state.alertTimer -= dt;
     // Cleanup
     cleanupBehind();
   }
@@ -1521,6 +1761,26 @@ export class GameSystem extends createSystem({
             spawnParticles(m.mesh.position.x, m.mesh.position.y, m.mesh.position.z, 0xff4400, 10);
             spawnFloatingScore(m.mesh.position.x, m.mesh.position.y + 0.3, m.mesh.position.z, 150);
             audio.play('mine');
+            hit = true;
+          }
+        }
+
+        // vs ground targets
+        if (!hit) for (const gt of groundTargets) {
+          if (!gt.alive || hit) continue;
+          const gtWorldZ = gt.z - state.scrollZ;
+          if (Math.abs(b.mesh.position.x - gt.group.position.x) < 0.7 && Math.abs(b.mesh.position.z - gtWorldZ) < 0.5 && b.mesh.position.y < 1.0) {
+            gt.hp -= dmg;
+            if (gt.hp <= 0) {
+              gt.alive = false; gt.group.visible = false;
+              const pts = gt.type === 'hangar' ? 500 : gt.type === 'depot' ? 400 : 300;
+              addScore(pts); addCombo(); state.totalKills++; state.groundTargetsDestroyed++;
+              spawnParticles(gt.group.position.x, 0.4, gt.group.position.z, gt.type === 'depot' ? 0xff8800 : 0x888888, 18);
+              spawnFloatingScore(gt.group.position.x, 1, gt.group.position.z, pts);
+              audio.play('explode');
+              if (b.isMissile) triggerScreenShake(0.3, 0.3);
+              if (gt.type === 'depot') showAlert('DEPOT DESTROYED!');
+            } else audio.play('hit');
             hit = true;
           }
         }
@@ -1792,6 +2052,14 @@ export class GameSystem extends createSystem({
         else if (p.type === 'spread') { state.spreadShot = true; state.spreadTimer = 10; }
         else if (p.type === 'magnet') addScore(500);
         else if (p.type === 'missile') { state.missileAmmo = Math.min(9, state.missileAmmo + 3); }
+        else if (p.type === 'weapon') {
+          if (state.weaponLevel < 3) {
+            state.weaponLevel++;
+            showAlert(`WEAPON LEVEL ${state.weaponLevel}!`);
+          } else {
+            addScore(500);
+          }
+        }
       }
     }
   }
@@ -1885,6 +2153,77 @@ export class GameSystem extends createSystem({
     if (Math.abs(dx) < 1.5 && Math.abs(dy) < 0.5 && Math.abs(dz) < 1.0) playerHit();
   }
 
+  private updateGroundTargets(dt: number) {
+    for (const gt of groundTargets) {
+      if (!gt.alive) continue;
+      gt.group.position.z = gt.z - state.scrollZ;
+      // Radar dish rotation for radar type
+      if (gt.type === 'radar') {
+        gt.group.children.forEach((child, idx) => {
+          if (idx === 1) child.rotation.y += dt * 2; // rotate dish
+        });
+      }
+      // Hit indicator - pulse when damaged
+      if (gt.hp < gt.maxHp) {
+        const dmgPct = gt.hp / gt.maxHp;
+        gt.group.children.forEach(child => {
+          if ((child as Mesh).material && 'emissiveIntensity' in (child as Mesh).material) {
+            ((child as Mesh).material as MeshStandardMaterial).emissiveIntensity = 0.2 + (1 - dmgPct) * 0.5 * (0.5 + Math.sin(this.time * 8) * 0.5);
+          }
+        });
+      }
+    }
+  }
+
+  private updateFormations(dt: number) {
+    for (const f of formations) {
+      if (!f.alive) continue;
+      // Check if all dead for bonus
+      const aliveCount = f.fighters.filter(fighter => fighter.alive).length;
+      if (aliveCount === 0 && f.alive) {
+        f.alive = false;
+        addScore(1000);
+        showAlert('FORMATION ELIMINATED! +1000');
+      }
+    }
+  }
+
+  private updateCheckpoints(dt: number) {
+    // Spawn checkpoint markers every 200m
+    const nextCheckpointZ = -(state.checkpoint + 1) * 200;
+    if (nextCheckpointZ > state.scrollZ - 80 && !checkpointMarkers.some(c => Math.abs(c.z - nextCheckpointZ) < 10)) {
+      const marker = createCheckpoint(0);
+      marker.position.z = nextCheckpointZ - state.scrollZ;
+      world.scene.add(marker);
+      checkpointMarkers.push({ group: marker, z: nextCheckpointZ, reached: false });
+    }
+
+    // Update and check checkpoint markers
+    for (const cp of checkpointMarkers) {
+      cp.group.position.z = cp.z - state.scrollZ;
+      // Pulse the ring
+      const ring = cp.group.children[cp.group.children.length - 1];
+      if (ring) ring.rotation.z = this.time * 0.5;
+
+      // Check if player passed
+      if (!cp.reached && cp.group.position.z > -1 && cp.group.position.z < 1) {
+        cp.reached = true;
+        state.checkpoint++;
+        state.checkpointsReached++;
+        addScore(500);
+        audio.play('powerup');
+        showAlert(`CHECKPOINT ${state.checkpoint}! +500`);
+        // Change checkpoint color to indicate reached
+        cp.group.children.forEach(child => {
+          if ((child as Mesh).material) {
+            const mat = (child as Mesh).material as MeshBasicMaterial;
+            if (mat.color) mat.color.setHex(0xffcc00);
+          }
+        });
+      }
+    }
+  }
+
   private updateFortressVisuals(dt: number) {
     for (const beam of ceilingBeams) {
       beam.mesh.position.z = beam.z - state.scrollZ;
@@ -1924,6 +2263,19 @@ export class GameSystem extends createSystem({
     setText('hud-powerups', powers);
     // Missile ammo
     setText('hud-missiles', state.missileAmmo > 0 ? `🚀 x${state.missileAmmo}` : '');
+    // Weapon level
+    const wlvl = state.weaponLevel > 1 ? ` | WPN Lv${state.weaponLevel}` : '';
+    setText('hud-altitude', `Alt: ${state.altitude.toFixed(1)}m${wlvl}`);
+    // Checkpoint
+    if (state.checkpoint > 0) {
+      setText('hud-level', `Level: ${state.level} | CP: ${state.checkpoint}`);
+    }
+    // Alert text
+    if (state.alertTimer > 0 && state.alertText) {
+      if (!(boss && boss.alive)) {
+        setText('hud-boss', `⚠ ${state.alertText}`);
+      }
+    }
     // Boss HP bar
     if (boss && boss.alive) {
       const hpPct = Math.floor((boss.hp / boss.maxHp) * 100);
@@ -1931,7 +2283,7 @@ export class GameSystem extends createSystem({
       const bars = '█'.repeat(barsCount) + '░'.repeat(20 - barsCount);
       const shieldInfo = boss.shieldActive ? ` [SHIELD x${boss.shieldHp}]` : '';
       setText('hud-boss', `BOSS ${bars} ${hpPct}%${shieldInfo}`);
-    } else {
+    } else if (state.alertTimer <= 0) {
       setText('hud-boss', '');
     }
   }
@@ -2039,6 +2391,8 @@ export class GameSystem extends createSystem({
     }
     // Power-ups (green)
     powerUps.forEach(p => { if (p.alive) addDot(p.mesh.position.x, p.mesh.position.z, 0x44ff44); });
+    // Ground targets (white)
+    groundTargets.forEach(gt => { if (gt.alive) addDot(gt.group.position.x, gt.group.position.z, 0xdddddd); });
   }
 
   private updateAmbient(time: number) {
