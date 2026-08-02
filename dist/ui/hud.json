@@ -55,6 +55,17 @@
                   {
                     "type": "container",
                     "sourceTag": "div",
+                    "children": [],
+                    "properties": {
+                      "name": "hud-sector",
+                      "fontSize": "11",
+                      "color": "#6688aa"
+                    },
+                    "dataUid": "uid-8"
+                  },
+                  {
+                    "type": "container",
+                    "sourceTag": "div",
                     "children": [
                       "Fuel: 100%"
                     ],
@@ -63,7 +74,7 @@
                       "fontSize": "14",
                       "color": "#ff8800"
                     },
-                    "dataUid": "uid-8"
+                    "dataUid": "uid-9"
                   },
                   {
                     "type": "container",
@@ -76,7 +87,7 @@
                       "fontSize": "12",
                       "color": "#88aacc"
                     },
-                    "dataUid": "uid-9"
+                    "dataUid": "uid-10"
                   },
                   {
                     "type": "container",
@@ -87,7 +98,7 @@
                       "fontSize": "12",
                       "color": "#ff4444"
                     },
-                    "dataUid": "uid-10"
+                    "dataUid": "uid-11"
                   }
                 ],
                 "properties": {
@@ -112,7 +123,7 @@
                       "fontSize": "14",
                       "color": "#ff4444"
                     },
-                    "dataUid": "uid-12"
+                    "dataUid": "uid-13"
                   },
                   {
                     "type": "container",
@@ -125,7 +136,7 @@
                       "fontSize": "14",
                       "color": "#aaaaaa"
                     },
-                    "dataUid": "uid-13"
+                    "dataUid": "uid-14"
                   },
                   {
                     "type": "container",
@@ -136,7 +147,7 @@
                       "fontSize": "12",
                       "color": "#44ffaa"
                     },
-                    "dataUid": "uid-14"
+                    "dataUid": "uid-15"
                   }
                 ],
                 "properties": {
@@ -144,7 +155,7 @@
                   "gap": "2",
                   "alignItems": "flex-end"
                 },
-                "dataUid": "uid-11"
+                "dataUid": "uid-12"
               }
             ],
             "properties": {
@@ -163,7 +174,7 @@
               "fontSize": "11",
               "color": "#44ff44"
             },
-            "dataUid": "uid-15"
+            "dataUid": "uid-16"
           },
           {
             "type": "container",
@@ -175,7 +186,7 @@
               "fontWeight": "bold",
               "color": "#ff4444"
             },
-            "dataUid": "uid-16"
+            "dataUid": "uid-17"
           }
         ],
         "properties": {
@@ -200,7 +211,7 @@
         "column": 0
       },
       "end": {
-        "line": 21,
+        "line": 22,
         "column": 8
       }
     },
@@ -210,7 +221,7 @@
         "column": 2
       },
       "end": {
-        "line": 20,
+        "line": 21,
         "column": 8
       }
     },
@@ -220,7 +231,7 @@
         "column": 4
       },
       "end": {
-        "line": 17,
+        "line": 18,
         "column": 10
       }
     },
@@ -260,7 +271,7 @@
         "column": 6
       },
       "end": {
-        "line": 11,
+        "line": 12,
         "column": 12
       }
     },
@@ -271,7 +282,7 @@
       },
       "end": {
         "line": 8,
-        "column": 76
+        "column": 68
       }
     },
     "uid-9": {
@@ -281,7 +292,7 @@
       },
       "end": {
         "line": 9,
-        "column": 79
+        "column": 76
       }
     },
     "uid-10": {
@@ -291,27 +302,27 @@
       },
       "end": {
         "line": 10,
-        "column": 67
+        "column": 79
       }
     },
     "uid-11": {
       "start": {
-        "line": 12,
-        "column": 6
+        "line": 11,
+        "column": 8
       },
       "end": {
-        "line": 16,
-        "column": 12
+        "line": 11,
+        "column": 67
       }
     },
     "uid-12": {
       "start": {
         "line": 13,
-        "column": 8
+        "column": 6
       },
       "end": {
-        "line": 13,
-        "column": 75
+        "line": 17,
+        "column": 12
       }
     },
     "uid-13": {
@@ -331,17 +342,17 @@
       },
       "end": {
         "line": 15,
-        "column": 70
+        "column": 75
       }
     },
     "uid-15": {
       "start": {
-        "line": 18,
-        "column": 4
+        "line": 16,
+        "column": 8
       },
       "end": {
-        "line": 18,
-        "column": 66
+        "line": 16,
+        "column": 70
       }
     },
     "uid-16": {
@@ -351,6 +362,16 @@
       },
       "end": {
         "line": 19,
+        "column": 66
+      }
+    },
+    "uid-17": {
+      "start": {
+        "line": 20,
+        "column": 4
+      },
+      "end": {
+        "line": 20,
         "column": 81
       }
     }

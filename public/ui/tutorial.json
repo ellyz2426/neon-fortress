@@ -347,11 +347,47 @@
           {
             "type": "container",
             "sourceTag": "div",
+            "children": [
+              "Destroy shield generators to clear force fields"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-32"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Carriers spawn fighters - destroy them fast!"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-33"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
+            "children": [
+              "Shoot down homing missiles or dodge!"
+            ],
+            "properties": {
+              "fontSize": "12",
+              "color": "#aaaaaa"
+            },
+            "dataUid": "uid-34"
+          },
+          {
+            "type": "container",
+            "sourceTag": "div",
             "children": [],
             "properties": {
               "height": "8"
             },
-            "dataUid": "uid-32"
+            "dataUid": "uid-35"
           },
           {
             "type": "container",
@@ -367,7 +403,7 @@
                   "fontSize": "14",
                   "color": "#aaaaaa"
                 },
-                "dataUid": "uid-34"
+                "dataUid": "uid-37"
               }
             ],
             "properties": {
@@ -379,7 +415,7 @@
               "alignItems": "center",
               "cursor": "pointer"
             },
-            "dataUid": "uid-33"
+            "dataUid": "uid-36"
           }
         ],
         "properties": {
@@ -405,7 +441,7 @@
         "column": 0
       },
       "end": {
-        "line": 36,
+        "line": 39,
         "column": 8
       }
     },
@@ -415,7 +451,7 @@
         "column": 2
       },
       "end": {
-        "line": 35,
+        "line": 38,
         "column": 8
       }
     },
@@ -716,7 +752,7 @@
       },
       "end": {
         "line": 31,
-        "column": 26
+        "column": 93
       }
     },
     "uid-33": {
@@ -725,17 +761,47 @@
         "column": 4
       },
       "end": {
-        "line": 34,
-        "column": 10
+        "line": 32,
+        "column": 90
       }
     },
     "uid-34": {
       "start": {
         "line": 33,
-        "column": 6
+        "column": 4
       },
       "end": {
         "line": 33,
+        "column": 82
+      }
+    },
+    "uid-35": {
+      "start": {
+        "line": 34,
+        "column": 4
+      },
+      "end": {
+        "line": 34,
+        "column": 26
+      }
+    },
+    "uid-36": {
+      "start": {
+        "line": 35,
+        "column": 4
+      },
+      "end": {
+        "line": 37,
+        "column": 10
+      }
+    },
+    "uid-37": {
+      "start": {
+        "line": 36,
+        "column": 6
+      },
+      "end": {
+        "line": 36,
         "column": 52
       }
     }

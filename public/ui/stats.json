@@ -247,12 +247,12 @@
                     "type": "container",
                     "sourceTag": "div",
                     "children": [
-                      "Smart Bombs: 0"
+                      "Carriers: 0"
                     ],
                     "properties": {
-                      "name": "stat-bombs",
+                      "name": "stat-carriers",
                       "fontSize": "13",
-                      "color": "#ff4444"
+                      "color": "#8844aa"
                     },
                     "dataUid": "uid-23"
                   }

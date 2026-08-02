@@ -343,6 +343,48 @@ class AudioEngine {
       o.connect(g); g.gain.value = this.sfxVol * 0.35;
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
       o.start(now); o.stop(now + 0.15);
+    } else if (type === 'carrier') {
+      // Deep ominous horn for carrier arrival
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(80, now);
+      o.frequency.linearRampToValueAtTime(150, now + 0.5);
+      o.frequency.linearRampToValueAtTime(60, now + 1.0);
+      o.connect(g); g.gain.value = this.sfxVol * 0.5;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 1.1);
+      o.start(now); o.stop(now + 1.1);
+    } else if (type === 'shield_gen') {
+      // Crackling electric for shield generator
+      const bufSize = ctx.sampleRate * 0.35;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufSize, 0.3) * (Math.sin(i * 0.01) > 0 ? 1 : 0.3);
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.connect(g);
+      g.gain.value = this.sfxVol * 0.6;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      src.start(now);
+    } else if (type === 'homing') {
+      // Rising warning tone for homing missile
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(600, now);
+      o.frequency.setValueAtTime(900, now + 0.1);
+      o.frequency.setValueAtTime(600, now + 0.2);
+      o.frequency.setValueAtTime(900, now + 0.3);
+      o.connect(g); g.gain.value = this.sfxVol * 0.3;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      o.start(now); o.stop(now + 0.4);
+    } else if (type === 'warp') {
+      // Sweeping warp transition sound
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(200, now);
+      o.frequency.exponentialRampToValueAtTime(4000, now + 0.5);
+      o.frequency.exponentialRampToValueAtTime(200, now + 1.0);
+      o.connect(g); g.gain.value = this.sfxVol * 0.4;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 1.1);
+      o.start(now); o.stop(now + 1.1);
     }
   }
 
@@ -422,6 +464,9 @@ interface Asteroid { group: Group; z: number; x: number; y: number; alive: boole
 interface CloakerEnemy { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; cooldown: number; cloakPhase: number; visible_pct: number; shimmerTimer: number; }
 interface GravityWell { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; pullRadius: number; pullStrength: number; rotSpeed: number; }
 interface Wingman { group: Group; alive: boolean; hp: number; maxHp: number; cooldown: number; respawnTimer: number; targetEnemy: EnemyFighter | PatrolDrone | CloakerEnemy | null; }
+interface CarrierShip { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; maxHp: number; cooldown: number; spawnCooldown: number; spawnCount: number; }
+interface ShieldGenerator { group: Group; z: number; lane: number; alive: boolean; hp: number; maxHp: number; fieldMesh: Mesh; fieldActive: boolean; }
+interface HomingMissile { mesh: Group; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; turnRate: number; }
 
 interface GameState {
   screen: GameScreen;
@@ -496,6 +541,12 @@ interface GameState {
   scoreMultiplier: number;
   scoreMultiplierTimer: number;
   gravityWellsDestroyed: number;
+  // Round 7 additions
+  carriersDestroyed: number;
+  shieldGensDestroyed: number;
+  homingMissilesDodged: number;
+  warpTransitionTimer: number;
+  warpTransitionActive: boolean;
 }
 
 const state: GameState = {
@@ -523,6 +574,8 @@ const state: GameState = {
   killStreak: 0, bestStreak: 0, totalWingmanKills: 0,
   wingmanActive: false, wingmanRespawnTimer: 0,
   scoreMultiplier: 1, scoreMultiplierTimer: 0, gravityWellsDestroyed: 0,
+  carriersDestroyed: 0, shieldGensDestroyed: 0, homingMissilesDodged: 0,
+  warpTransitionTimer: 0, warpTransitionActive: false,
 };
 
 // ───── Scene Objects ─────
@@ -556,6 +609,10 @@ const asteroids: Asteroid[] = [];
 const cloakers: CloakerEnemy[] = [];
 const gravityWells: GravityWell[] = [];
 let wingman: Wingman | null = null;
+const carriers: CarrierShip[] = [];
+const shieldGenerators: ShieldGenerator[] = [];
+const homingMissiles: HomingMissile[] = [];
+let warpLines: Mesh[] = [];
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -1175,6 +1232,112 @@ function createScoreZoneMesh(): Group {
   return g;
 }
 
+// ───── Carrier Ship ─────
+function createCarrierMesh(): Group {
+  const g = new Group();
+  // Main hull - elongated hexagonal
+  const hull = new Mesh(new BoxGeometry(2.5, 0.5, 4), new MeshStandardMaterial({ color: 0x442244, metalness: 0.7, roughness: 0.3, emissive: 0x220022, emissiveIntensity: 0.3 }));
+  g.add(hull);
+  // Bridge/tower
+  const bridge = new Mesh(new BoxGeometry(0.8, 0.6, 1), new MeshStandardMaterial({ color: 0x553355, metalness: 0.6, roughness: 0.3, emissive: 0x330033, emissiveIntensity: 0.4 }));
+  bridge.position.set(0, 0.5, -0.5);
+  g.add(bridge);
+  // Hangars (sides)
+  const hangarL = new Mesh(new BoxGeometry(0.6, 0.3, 1.5), new MeshStandardMaterial({ color: 0x332233, metalness: 0.5, roughness: 0.4 }));
+  hangarL.position.set(-1.2, -0.15, 0.8);
+  g.add(hangarL);
+  const hangarR = hangarL.clone();
+  hangarR.position.set(1.2, -0.15, 0.8);
+  g.add(hangarR);
+  // Engine glow
+  const engL = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial({ color: 0xff4488, transparent: true, opacity: 0.8 }));
+  engL.position.set(-0.8, 0, 2);
+  g.add(engL);
+  const engR = engL.clone();
+  engR.position.set(0.8, 0, 2);
+  g.add(engR);
+  // Wireframe overlay
+  const wireGeo = new EdgesGeometry(hull.geometry);
+  const wire = new LineSegments(wireGeo, new LineBasicMaterial({ color: 0x8844aa, transparent: true, opacity: 0.6 }));
+  g.add(wire);
+  // Warning light on bridge
+  const light = new Mesh(new SphereGeometry(0.1, 6, 4), new MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.9 }));
+  light.position.set(0, 0.85, -0.5);
+  g.add(light);
+  return g;
+}
+
+// ───── Shield Generator ─────
+function createShieldGenMesh(): { gen: Group; field: Mesh } {
+  const g = new Group();
+  // Generator base - cylindrical
+  const base = new Mesh(new CylinderGeometry(0.4, 0.5, 0.6, 8), new MeshStandardMaterial({ color: 0x2244aa, metalness: 0.8, roughness: 0.2, emissive: 0x1122aa, emissiveIntensity: 0.5 }));
+  base.position.y = 0.3;
+  g.add(base);
+  // Emitter dome on top
+  const dome = new Mesh(new SphereGeometry(0.25, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), new MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.7 }));
+  dome.position.y = 0.6;
+  g.add(dome);
+  // Ring around base
+  const ring = new Mesh(new RingGeometry(0.45, 0.55, 16), new MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.4, side: 2 }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.1;
+  g.add(ring);
+  // Energy pillar glow
+  const pillar = new Mesh(new CylinderGeometry(0.05, 0.05, 1.0, 6), new MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.6 }));
+  pillar.position.y = 1.1;
+  g.add(pillar);
+  // Force field wall (full-height barrier)
+  const fieldGeo = new BoxGeometry(2.5, 3.5, 0.1);
+  const fieldMat = new MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.12, side: 2 });
+  const field = new Mesh(fieldGeo, fieldMat);
+  field.position.y = 1.75;
+  // Wireframe on field
+  const fieldWire = new LineSegments(new EdgesGeometry(fieldGeo), new LineBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.3 }));
+  field.add(fieldWire);
+  g.add(field);
+  return { gen: g, field };
+}
+
+// ───── Homing Missile ─────
+function createHomingMissileMesh(): Group {
+  const g = new Group();
+  // Body
+  const body = new Mesh(new CylinderGeometry(0.06, 0.08, 0.4, 6), new MeshStandardMaterial({ color: 0xff2200, metalness: 0.6, roughness: 0.3, emissive: 0xff0000, emissiveIntensity: 0.5 }));
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  // Nose cone
+  const nose = new Mesh(new ConeGeometry(0.06, 0.15, 6), new MeshBasicMaterial({ color: 0xff4400 }));
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -0.25;
+  g.add(nose);
+  // Trail glow
+  const trail = new Mesh(new SphereGeometry(0.05, 4, 4), new MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.7 }));
+  trail.position.z = 0.22;
+  g.add(trail);
+  return g;
+}
+
+// ───── Warp Lines VFX ─────
+function createWarpLines(): Mesh[] {
+  const lines: Mesh[] = [];
+  for (let i = 0; i < 60; i++) {
+    const len = 2 + Math.random() * 6;
+    const geo = new BoxGeometry(0.03, 0.03, len);
+    const hue = Math.random();
+    const color = new Color().setHSL(hue, 0.8, 0.7);
+    const mat = new MeshBasicMaterial({ color, transparent: true, opacity: 0, blending: AdditiveBlending });
+    const mesh = new Mesh(geo, mat);
+    // Distribute in a ring around the camera
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 3 + Math.random() * 8;
+    mesh.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.5 + 8, -10 + Math.random() * 5);
+    mesh.visible = false;
+    lines.push(mesh);
+  }
+  return lines;
+}
+
 function spawnWingman() {
   if (wingman && wingman.alive) return;
   const ship = createWingmanShip();
@@ -1263,6 +1426,12 @@ function triggerSmartBomb() {
       world.scene.remove(bullets[i].mesh);
       bullets.splice(i, 1);
     }
+  }
+  // Remove homing missiles
+  for (let i = homingMissiles.length - 1; i >= 0; i--) {
+    world.scene.remove(homingMissiles[i].mesh);
+    spawnParticles(homingMissiles[i].mesh.position.x, homingMissiles[i].mesh.position.y, homingMissiles[i].mesh.position.z, 0xff4400, 6);
+    homingMissiles.splice(i, 1);
   }
   state.totalKills += killCount;
   addScore(killCount * 100);
@@ -1517,6 +1686,15 @@ function spawnFortressSection() {
       const hp = gtType === 'hangar' ? 3 : gtType === 'depot' ? 2 : 1;
       groundTargets.push({ group: gt, z: rowZ - 2.5, lane: gtLane, alive: true, hp, maxHp: hp, type: gtType });
     }
+    // Shield generators (level 4+) — force field barriers that must be destroyed
+    if (lvl >= 4 && Math.random() < 0.1 + (lvl - 4) * 0.015 && row > 2 && row < 7) {
+      const sgLane = Math.floor(Math.random() * 3) - 1;
+      const { gen, field } = createShieldGenMesh();
+      gen.position.set(sgLane * 2.5, 0, rowZ - 2);
+      world.scene.add(gen);
+      const sgHp = 3 + Math.floor(lvl / 3);
+      shieldGenerators.push({ group: gen, z: rowZ - 2, lane: sgLane, alive: true, hp: sgHp, maxHp: sgHp, fieldMesh: field, fieldActive: true });
+    }
   }
   fortressSpawnZ -= 40;
 }
@@ -1652,6 +1830,22 @@ function spawnOpenSection() {
     world.scene.add(szm);
     powerUps.push({ mesh: szm, z: z - 18, lane: 0, type: 'magnet', alive: true }); // magnet type gives score bonus + activates multiplier
   }
+  // Carrier ships (level 6+) — large ships that spawn fighters
+  if (lvl >= 6 && Math.random() < 0.15 + (lvl - 6) * 0.02) {
+    const cg = createCarrierMesh();
+    const cx = (Math.random() - 0.5) * 4;
+    const cy = 2.5 + Math.random() * 1;
+    const cz = z - 25 - Math.random() * 8;
+    cg.position.set(cx, cy, cz);
+    world.scene.add(cg);
+    carriers.push({
+      group: cg, z: cz, x: cx, y: cy, alive: true,
+      hp: 8 + Math.floor(lvl / 2), maxHp: 8 + Math.floor(lvl / 2),
+      cooldown: 3, spawnCooldown: 5, spawnCount: 0,
+    });
+    audio.play('carrier');
+    showAlert('CARRIER SHIP DETECTED!');
+  }
   fortressSpawnZ -= 30;
 }
 
@@ -1724,6 +1918,15 @@ function cleanupBehind() {
   for (let i = gravityWells.length - 1; i >= 0; i--) {
     if (gravityWells[i].z > limit) { world.scene.remove(gravityWells[i].group); gravityWells.splice(i, 1); }
   }
+  for (let i = carriers.length - 1; i >= 0; i--) {
+    if (carriers[i].z > limit) { world.scene.remove(carriers[i].group); carriers.splice(i, 1); }
+  }
+  for (let i = shieldGenerators.length - 1; i >= 0; i--) {
+    if (shieldGenerators[i].z > limit) { world.scene.remove(shieldGenerators[i].group); shieldGenerators.splice(i, 1); }
+  }
+  for (let i = homingMissiles.length - 1; i >= 0; i--) {
+    if (homingMissiles[i].life <= 0) { world.scene.remove(homingMissiles[i].mesh); homingMissiles.splice(i, 1); }
+  }
   // Clean dead formations
   for (let i = formations.length - 1; i >= 0; i--) {
     const f = formations[i];
@@ -1759,6 +1962,9 @@ function resetGame() {
   state.killStreak = 0; state.scoreMultiplier = 1; state.scoreMultiplierTimer = 0;
   state.gravityWellsDestroyed = 0;
   state.wingmanActive = false; state.wingmanRespawnTimer = 0;
+  state.carriersDestroyed = 0; state.shieldGensDestroyed = 0;
+  state.homingMissilesDodged = 0;
+  state.warpTransitionTimer = 0; state.warpTransitionActive = false;
   applySectorTheme(0);
   playerX = 0;
   fortressSpawnZ = -20;
@@ -1787,6 +1993,10 @@ function resetGame() {
   cloakers.forEach(c => world.scene.remove(c.group)); cloakers.length = 0;
   gravityWells.forEach(g => world.scene.remove(g.group)); gravityWells.length = 0;
   if (wingman) { world.scene.remove(wingman.group); wingman = null; }
+  carriers.forEach(c => world.scene.remove(c.group)); carriers.length = 0;
+  shieldGenerators.forEach(s => world.scene.remove(s.group)); shieldGenerators.length = 0;
+  homingMissiles.forEach(h => world.scene.remove(h.mesh)); homingMissiles.length = 0;
+  warpLines.forEach(l => world.scene.remove(l)); warpLines.length = 0;
   formations.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
@@ -1882,6 +2092,8 @@ function saveStats() {
     stats.bestStreak = Math.max(stats.bestStreak || 0, state.bestStreak);
     stats.gravityWellsDestroyed = (stats.gravityWellsDestroyed || 0) + state.gravityWellsDestroyed;
     stats.totalWingmanKills = (stats.totalWingmanKills || 0) + state.totalWingmanKills;
+    stats.carriersDestroyed = (stats.carriersDestroyed || 0) + state.carriersDestroyed;
+    stats.shieldGensDestroyed = (stats.shieldGensDestroyed || 0) + state.shieldGensDestroyed;
     localStorage.setItem('neon-fortress-stats', JSON.stringify(stats));
     state.highScore = stats.highScore;
   } catch {}
@@ -2209,6 +2421,7 @@ export class GameSystem extends createSystem({
         const theme = SECTOR_THEMES[newSector];
         showAlert(`ENTERING ${theme.name} SECTOR!`);
         audio.play('sector');
+        this.triggerWarpTransition();
       } else {
         showAlert(`LEVEL ${state.level}! SPEED INCREASING!`);
       }
@@ -2256,6 +2469,14 @@ export class GameSystem extends createSystem({
     this.updateGravityWells(dt);
     // ── Update wingman ──
     this.updateWingman(dt);
+    // ── Update carriers ──
+    this.updateCarriers(dt);
+    // ── Update shield generators ──
+    this.updateShieldGenerators(dt);
+    // ── Update homing missiles ──
+    this.updateHomingMissiles(dt);
+    // ── Update warp transition ──
+    this.updateWarpTransition(dt);
     // ── Update score multiplier ──
     if (state.scoreMultiplierTimer > 0) { state.scoreMultiplierTimer -= dt; if (state.scoreMultiplierTimer <= 0) { state.scoreMultiplier = 1; } }
     // ── Update bonus corridor ──
@@ -2417,6 +2638,54 @@ export class GameSystem extends createSystem({
               triggerScreenShake(0.3, 0.35);
               showAlert('GRAVITY WELL DESTROYED!');
             } else { audio.play('hit'); audio.play('gravity'); }
+            hit = true;
+          }
+        }
+
+        // vs carriers
+        if (!hit) for (const car of carriers) {
+          if (!car.alive || hit) continue;
+          if (Math.abs(b.mesh.position.x - car.group.position.x) < 1.5 && Math.abs(b.mesh.position.y - car.group.position.y) < 0.5 && Math.abs(b.mesh.position.z - car.group.position.z) < 2.0) {
+            car.hp -= dmg;
+            if (car.hp <= 0) {
+              car.alive = false; car.group.visible = false;
+              addScore(1500); addCombo(); state.totalKills++; state.carriersDestroyed++;
+              spawnParticles(car.group.position.x, car.group.position.y, car.group.position.z, 0x8844aa, 30);
+              spawnFloatingScore(car.group.position.x, car.group.position.y + 1, car.group.position.z, 1500);
+              audio.play('explode');
+              triggerScreenShake(0.4, 0.5);
+              showAlert('CARRIER DESTROYED! +1500');
+              // Chain explosions
+              for (let chain = 0; chain < 5; chain++) {
+                setTimeout(() => {
+                  spawnParticles(car.group.position.x + (Math.random() - 0.5) * 3, car.group.position.y + (Math.random() - 0.5), car.group.position.z + (Math.random() - 0.5) * 3, 0xff4400, 8);
+                }, chain * 120);
+              }
+            } else audio.play('hit');
+            hit = true;
+          }
+        }
+
+        // vs shield generators
+        if (!hit) for (const sg of shieldGenerators) {
+          if (!sg.alive || hit) continue;
+          const sgWorldZ = sg.z - state.scrollZ;
+          if (Math.abs(b.mesh.position.x - sg.group.position.x) < 0.5 && Math.abs(b.mesh.position.z - sgWorldZ) < 0.5 && b.mesh.position.y < 2.0) {
+            sg.hp -= dmg;
+            if (sg.hp <= 0) {
+              sg.alive = false; sg.fieldActive = false;
+              sg.fieldMesh.visible = false;
+              sg.group.children.forEach(child => {
+                if ((child as Mesh).material && 'opacity' in (child as Mesh).material) {
+                  ((child as Mesh).material as any).opacity *= 0.3;
+                }
+              });
+              addScore(400); addCombo(); state.totalKills++; state.shieldGensDestroyed++;
+              spawnParticles(sg.group.position.x, 1, sg.group.position.z, 0x4488ff, 20);
+              spawnFloatingScore(sg.group.position.x, 1.5, sg.group.position.z, 400);
+              audio.play('shield_gen');
+              showAlert('SHIELD GENERATOR DOWN!');
+            } else audio.play('hit');
             hit = true;
           }
         }
@@ -2815,6 +3084,10 @@ export class GameSystem extends createSystem({
         world.scene.add(drone);
         patrolDrones.push({ group: drone, z: boss.z, x: dx, y: dy, alive: true, hp: 1, cooldown: 2, patternAngle: Math.random() * Math.PI * 2, patternRadius: 1, centerX: dx, centerY: dy });
         audio.play('alert');
+        // Boss fires homing missiles in phase 2 at level 7+
+        if (boss.phase === 2 && state.level >= 7) {
+          this.fireHomingMissile(boss.group.position.x, boss.group.position.y, boss.group.position.z);
+        }
       }
     }
 
@@ -3202,6 +3475,221 @@ export class GameSystem extends createSystem({
     }
   }
 
+  private updateCarriers(dt: number) {
+    for (const car of carriers) {
+      if (!car.alive) continue;
+      car.group.position.z = car.z - state.scrollZ;
+      // Slow lateral drift
+      car.group.position.x = car.x + Math.sin(this.time * 0.8 + car.z) * 2;
+      car.group.position.y = car.y + Math.sin(this.time * 1.2) * 0.3;
+      // Rotate engine glow
+      car.group.children.forEach((child, idx) => {
+        if (idx === 4 || idx === 5) {
+          (child as Mesh).scale.setScalar(0.8 + Math.sin(this.time * 6 + idx) * 0.3);
+        }
+        // Warning light pulse
+        if (idx === 7) {
+          ((child as Mesh).material as MeshBasicMaterial).opacity = 0.5 + Math.sin(this.time * 4) * 0.4;
+        }
+      });
+      // Fire at player
+      car.cooldown -= dt;
+      if (car.cooldown <= 0 && car.group.position.z > -25 && car.group.position.z < 12) {
+        car.cooldown = 2.5 / getDiffMult();
+        // Dual cannon fire
+        for (let side = -1; side <= 1; side += 2) {
+          const b = createBullet(0xff22aa, true);
+          b.position.set(car.group.position.x + side * 0.8, car.group.position.y, car.group.position.z);
+          world.scene.add(b);
+          const dx = playerGroup.position.x - b.position.x;
+          const dy = playerGroup.position.y - b.position.y;
+          const dz = playerGroup.position.z - b.position.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist > 0.1) {
+            bullets.push({ mesh: b, vx: (dx / dist) * 10, vy: (dy / dist) * 10, vz: (dz / dist) * 10, life: 3, isEnemy: true });
+          }
+        }
+        audio.play('turret');
+        // Fire homing missile at higher levels
+        if (state.level >= 8 && Math.random() < 0.3) {
+          this.fireHomingMissile(car.group.position.x, car.group.position.y, car.group.position.z);
+        }
+      }
+      // Spawn fighters periodically
+      car.spawnCooldown -= dt;
+      if (car.spawnCooldown <= 0 && car.spawnCount < 6 && car.group.position.z > -20 && car.group.position.z < 15) {
+        car.spawnCooldown = 4 / getDiffMult();
+        car.spawnCount++;
+        const fg = createEnemyFighter();
+        const side = car.spawnCount % 2 === 0 ? -1 : 1;
+        const fx = car.group.position.x + side * 1.5;
+        const fy = car.group.position.y - 0.3;
+        const fz = car.group.position.z + 1;
+        fg.position.set(fx, fy, fz);
+        world.scene.add(fg);
+        enemies.push({ group: fg, z: car.z + 1, x: fx, y: fy, alive: true, cooldown: 2 + Math.random() * 2, hp: 1 + Math.floor(state.level / 5), vx: side * 1.5 });
+        audio.play('alert');
+      }
+      // Collision with player
+      if (Math.abs(playerGroup.position.x - car.group.position.x) < 1.5 && Math.abs(playerGroup.position.y - car.group.position.y) < 0.5 && Math.abs(playerGroup.position.z - car.group.position.z) < 2.0) {
+        playerHit();
+        triggerScreenShake(0.3, 0.35);
+      }
+    }
+  }
+
+  private updateShieldGenerators(dt: number) {
+    for (const sg of shieldGenerators) {
+      if (!sg.alive) { continue; }
+      sg.group.position.z = sg.z - state.scrollZ;
+      // Pulse field
+      if (sg.fieldActive) {
+        const pulse = 0.08 + Math.sin(this.time * 3 + sg.z) * 0.04;
+        (sg.fieldMesh.material as MeshBasicMaterial).opacity = pulse;
+        // Energy pillar pulse
+        sg.group.children.forEach((child, idx) => {
+          if (idx === 3) { // energy pillar
+            ((child as Mesh).material as MeshBasicMaterial).opacity = 0.3 + Math.sin(this.time * 5 + sg.z) * 0.3;
+          }
+        });
+        // Dome glow
+        sg.group.children.forEach((child, idx) => {
+          if (idx === 1) { // dome
+            ((child as Mesh).material as MeshBasicMaterial).opacity = 0.5 + Math.sin(this.time * 4) * 0.2;
+          }
+        });
+        // Field blocks player movement
+        if (sg.group.position.z > -3 && sg.group.position.z < 3) {
+          if (Math.abs(playerGroup.position.x - sg.group.position.x) < 1.5 && Math.abs(playerGroup.position.z - sg.group.position.z) < 0.4) {
+            playerHit();
+            audio.play('electric');
+          }
+        }
+      }
+      // Damage visual
+      const dmgPct = sg.hp / sg.maxHp;
+      if (dmgPct < 1) {
+        sg.group.children.forEach((child, idx) => {
+          if (idx === 0 && (child as Mesh).material && 'emissiveIntensity' in (child as Mesh).material) {
+            ((child as Mesh).material as MeshStandardMaterial).emissiveIntensity = 0.5 + (1 - dmgPct) * 0.5 * (0.5 + Math.sin(this.time * 8) * 0.5);
+          }
+        });
+      }
+    }
+  }
+
+  private fireHomingMissile(x: number, y: number, z: number) {
+    const hm = createHomingMissileMesh();
+    hm.position.set(x, y, z);
+    world.scene.add(hm);
+    const dx = playerGroup.position.x - x;
+    const dy = playerGroup.position.y - y;
+    const dz = playerGroup.position.z - z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const speed = 6;
+    homingMissiles.push({
+      mesh: hm, x, y, z,
+      vx: dist > 0.1 ? (dx / dist) * speed : 0,
+      vy: dist > 0.1 ? (dy / dist) * speed : 0,
+      vz: dist > 0.1 ? (dz / dist) * speed : speed,
+      life: 6, turnRate: 2.5,
+    });
+    audio.play('homing');
+  }
+
+  private updateHomingMissiles(dt: number) {
+    for (let i = homingMissiles.length - 1; i >= 0; i--) {
+      const hm = homingMissiles[i];
+      hm.life -= dt;
+      if (hm.life <= 0) {
+        world.scene.remove(hm.mesh);
+        homingMissiles.splice(i, 1);
+        state.homingMissilesDodged++;
+        continue;
+      }
+      // Track player
+      const tx = playerGroup.position.x - hm.mesh.position.x;
+      const ty = playerGroup.position.y - hm.mesh.position.y;
+      const tz = playerGroup.position.z - hm.mesh.position.z;
+      const tDist = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tDist > 0.1) {
+        const desiredVx = (tx / tDist) * 6;
+        const desiredVy = (ty / tDist) * 6;
+        const desiredVz = (tz / tDist) * 6;
+        hm.vx += (desiredVx - hm.vx) * hm.turnRate * dt;
+        hm.vy += (desiredVy - hm.vy) * hm.turnRate * dt;
+        hm.vz += (desiredVz - hm.vz) * hm.turnRate * dt;
+      }
+      hm.mesh.position.x += hm.vx * dt;
+      hm.mesh.position.y += hm.vy * dt;
+      hm.mesh.position.z += hm.vz * dt;
+      // Point in direction of travel
+      hm.mesh.lookAt(hm.mesh.position.x + hm.vx, hm.mesh.position.y + hm.vy, hm.mesh.position.z + hm.vz);
+      // Trail particles
+      if (Math.random() < 0.5) {
+        spawnParticles(hm.mesh.position.x, hm.mesh.position.y, hm.mesh.position.z, 0xff4400, 1);
+      }
+      // Player collision
+      if (Math.abs(hm.mesh.position.x - playerGroup.position.x) < 0.5 && Math.abs(hm.mesh.position.y - playerGroup.position.y) < 0.4 && Math.abs(hm.mesh.position.z - playerGroup.position.z) < 0.5) {
+        playerHit();
+        world.scene.remove(hm.mesh);
+        homingMissiles.splice(i, 1);
+        spawnParticles(hm.mesh.position.x, hm.mesh.position.y, hm.mesh.position.z, 0xff2200, 12);
+        audio.play('explode');
+        triggerScreenShake(0.25, 0.3);
+        continue;
+      }
+      // Can be shot down by player bullets
+      for (let j = bullets.length - 1; j >= 0; j--) {
+        const b = bullets[j];
+        if (b.isEnemy) continue;
+        if (Math.abs(b.mesh.position.x - hm.mesh.position.x) < 0.4 && Math.abs(b.mesh.position.y - hm.mesh.position.y) < 0.4 && Math.abs(b.mesh.position.z - hm.mesh.position.z) < 0.4) {
+          world.scene.remove(hm.mesh);
+          homingMissiles.splice(i, 1);
+          world.scene.remove(b.mesh);
+          bullets.splice(j, 1);
+          addScore(200);
+          spawnParticles(hm.mesh.position.x, hm.mesh.position.y, hm.mesh.position.z, 0xff4400, 10);
+          spawnFloatingScore(hm.mesh.position.x, hm.mesh.position.y + 0.3, hm.mesh.position.z, 200);
+          audio.play('explode');
+          break;
+        }
+      }
+    }
+  }
+
+  private updateWarpTransition(dt: number) {
+    if (!state.warpTransitionActive) return;
+    state.warpTransitionTimer -= dt;
+    if (state.warpTransitionTimer <= 0) {
+      state.warpTransitionActive = false;
+      // Hide warp lines
+      warpLines.forEach(l => { l.visible = false; (l.material as MeshBasicMaterial).opacity = 0; });
+      return;
+    }
+    const progress = 1 - state.warpTransitionTimer / 1.5;
+    // Animate warp lines
+    warpLines.forEach((line, i) => {
+      line.visible = true;
+      const phase = (progress * 3 + i * 0.05) % 1;
+      const opacity = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
+      (line.material as MeshBasicMaterial).opacity = opacity * 0.5;
+      line.position.z = -10 + phase * 15;
+      const stretch = 1 + progress * 3;
+      line.scale.z = stretch;
+    });
+  }
+
+  private triggerWarpTransition() {
+    if (warpLines.length === 0) {
+      warpLines = createWarpLines();
+      warpLines.forEach(l => world.scene.add(l));
+    }
+    state.warpTransitionActive = true;
+    state.warpTransitionTimer = 1.5;
+    audio.play('warp');
+  }
+
   private updateHUD() {
     const doc = this.docs['hud']?.doc;
     if (!doc) return;
@@ -3213,6 +3701,9 @@ export class GameSystem extends createSystem({
     setText('hud-fuel', `Fuel: ${Math.floor(state.fuel)}%`);
     setText('hud-level', `Level: ${state.level}`);
     setText('hud-altitude', `Alt: ${state.altitude.toFixed(1)}m`);
+    // Sector name
+    const sectorName = SECTOR_THEMES[state.sectorTheme % SECTOR_THEMES.length].name;
+    setText('hud-sector', sectorName);
     // Combo and multiplier
     if (state.combo > 1) {
       setText('hud-combo', `x${state.combo} COMBO`);
@@ -3389,6 +3880,34 @@ export class GameSystem extends createSystem({
     gravityWells.forEach(gw => { if (gw.alive) addDot(gw.group.position.x, gw.group.position.z, 0x8800ff); });
     // Wingman (light blue)
     if (wingman && wingman.alive) addDot(wingman.group.position.x, wingman.group.position.z, 0x44aaff);
+    // Carriers (large purple)
+    carriers.forEach(car => {
+      if (car.alive) {
+        const rx = (car.group.position.x - playerGroup.position.x) * radarScale;
+        const rz = (car.group.position.z - playerGroup.position.z) * radarScale;
+        if (Math.abs(rx) < 1.1 && Math.abs(rz) < 1.1) {
+          const dot = new Mesh(new SphereGeometry(0.06, 6, 4), new MeshBasicMaterial({ color: 0x8844aa, transparent: true, opacity: 0.5 + Math.sin(this.time * 3) * 0.3 }));
+          dot.position.set(rx, 0.04, rz);
+          radarGroup.add(dot);
+          radarDots.push(dot);
+        }
+      }
+    });
+    // Shield generators (cyan)
+    shieldGenerators.forEach(sg => { if (sg.alive) addDot(sg.group.position.x, sg.group.position.z, 0x44aaff); });
+    // Homing missiles (bright red blinking)
+    homingMissiles.forEach(hm => {
+      if (hm.life > 0) {
+        const rx = (hm.mesh.position.x - playerGroup.position.x) * radarScale;
+        const rz = (hm.mesh.position.z - playerGroup.position.z) * radarScale;
+        if (Math.abs(rx) < 1.1 && Math.abs(rz) < 1.1) {
+          const dot = new Mesh(new SphereGeometry(0.04, 4, 4), new MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: Math.sin(this.time * 10) > 0 ? 0.9 : 0.2 }));
+          dot.position.set(rx, 0.04, rz);
+          radarGroup.add(dot);
+          radarDots.push(dot);
+        }
+      }
+    });
   }
 
   private updateAmbient(time: number) {
@@ -3480,7 +3999,7 @@ export class GameSystem extends createSystem({
           setText('stat-formations', `Formations: ${s.formationsDestroyed || 0}`);
           setText('stat-asteroids', `Asteroids: ${s.asteroidsDestroyed || 0}`);
           setText('stat-cloakers', `Cloakers: ${s.cloakersKilled || 0}`);
-          setText('stat-bombs', `Smart Bombs: ${s.totalSmartBombs || 0}`);
+          setText('stat-carriers', `Carriers: ${s.carriersDestroyed || 0}`);
           setText('stat-distance', `Dist: ${Math.floor(s.totalDistance || 0)}m | Streak: ${s.bestStreak || 0}`);
         } catch {}
       }
