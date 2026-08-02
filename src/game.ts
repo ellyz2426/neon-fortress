@@ -294,6 +294,55 @@ class AudioEngine {
       o.connect(g); g.gain.value = this.sfxVol * 0.5;
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
       o.start(now); o.stop(now + 0.6);
+    } else if (type === 'streak') {
+      // Ascending triumphant chord for kill streak milestones
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, i) => {
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.type = 'sine';
+        o2.frequency.value = freq;
+        g2.gain.value = this.sfxVol * 0.25;
+        o2.connect(g2); g2.connect(this.masterGain!);
+        g2.gain.exponentialRampToValueAtTime(0.01, now + 0.05 * i + 0.4);
+        o2.start(now + 0.05 * i); o2.stop(now + 0.05 * i + 0.4);
+      });
+    } else if (type === 'gravity') {
+      // Deep wobbling bass for gravity well
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(60, now);
+      o.frequency.linearRampToValueAtTime(120, now + 0.2);
+      o.frequency.linearRampToValueAtTime(50, now + 0.5);
+      o.connect(g); g.gain.value = this.sfxVol * 0.4;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+      o.start(now); o.stop(now + 0.6);
+    } else if (type === 'wingman_spawn') {
+      // Upbeat dual-tone for wingman arrival
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(330, now);
+      o.frequency.exponentialRampToValueAtTime(660, now + 0.15);
+      o.connect(g); g.gain.value = this.sfxVol * 0.4;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      o.start(now); o.stop(now + 0.3);
+      const o2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.setValueAtTime(440, now + 0.1);
+      o2.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      g2.gain.value = this.sfxVol * 0.3;
+      o2.connect(g2); g2.connect(this.masterGain!);
+      g2.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      o2.start(now + 0.1); o2.stop(now + 0.35);
+    } else if (type === 'multiplier') {
+      // Quick rising ping for score multiplier zone
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(1000, now);
+      o.frequency.exponentialRampToValueAtTime(2000, now + 0.1);
+      o.connect(g); g.gain.value = this.sfxVol * 0.35;
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+      o.start(now); o.stop(now + 0.15);
     }
   }
 
@@ -371,6 +420,8 @@ interface CheckpointMarker { group: Group; z: number; reached: boolean; }
 interface DiveBomber { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; phase: 'hover' | 'dive'; diveTimer: number; targetX: number; targetY: number; }
 interface Asteroid { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; size: number; rotSpeed: { x: number; y: number; z: number }; vx: number; vy: number; }
 interface CloakerEnemy { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; cooldown: number; cloakPhase: number; visible_pct: number; shimmerTimer: number; }
+interface GravityWell { group: Group; z: number; x: number; y: number; alive: boolean; hp: number; pullRadius: number; pullStrength: number; rotSpeed: number; }
+interface Wingman { group: Group; alive: boolean; hp: number; maxHp: number; cooldown: number; respawnTimer: number; targetEnemy: EnemyFighter | PatrolDrone | CloakerEnemy | null; }
 
 interface GameState {
   screen: GameScreen;
@@ -436,6 +487,15 @@ interface GameState {
   asteroidsDestroyed: number;
   cloakersKilled: number;
   sectorTheme: number; // rotates 0-3
+  // Round 6 additions
+  killStreak: number;
+  bestStreak: number;
+  totalWingmanKills: number;
+  wingmanActive: boolean;
+  wingmanRespawnTimer: number;
+  scoreMultiplier: number;
+  scoreMultiplierTimer: number;
+  gravityWellsDestroyed: number;
 }
 
 const state: GameState = {
@@ -460,6 +520,9 @@ const state: GameState = {
   bonusActive: false, bonusTimer: 0, diveBombersKilled: 0,
   smartBombs: 1, smartBombCooldown: 0, totalSmartBombs: 0,
   asteroidsDestroyed: 0, cloakersKilled: 0, sectorTheme: 0,
+  killStreak: 0, bestStreak: 0, totalWingmanKills: 0,
+  wingmanActive: false, wingmanRespawnTimer: 0,
+  scoreMultiplier: 1, scoreMultiplierTimer: 0, gravityWellsDestroyed: 0,
 };
 
 // ───── Scene Objects ─────
@@ -491,6 +554,8 @@ const checkpointMarkers: CheckpointMarker[] = [];
 const diveBombers: DiveBomber[] = [];
 const asteroids: Asteroid[] = [];
 const cloakers: CloakerEnemy[] = [];
+const gravityWells: GravityWell[] = [];
+let wingman: Wingman | null = null;
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -1049,6 +1114,95 @@ function createCloakerMesh(): Group {
   return g;
 }
 
+function createGravityWellMesh(): Group {
+  const g = new Group();
+  // Central singularity sphere
+  const core = new Mesh(new SphereGeometry(0.3, 12, 8), new MeshBasicMaterial({ color: 0x8800ff, transparent: true, opacity: 0.8 }));
+  g.add(core);
+  // Accretion rings
+  for (let i = 0; i < 3; i++) {
+    const ring = new Mesh(
+      new RingGeometry(0.6 + i * 0.4, 0.7 + i * 0.4, 24),
+      new MeshBasicMaterial({ color: 0xaa44ff, transparent: true, opacity: 0.4 - i * 0.1, side: 2 })
+    );
+    ring.rotation.x = Math.PI / 2 + (i - 1) * 0.3;
+    g.add(ring);
+  }
+  // Outer glow sphere
+  const glow = new Mesh(new SphereGeometry(1.5, 12, 8), new MeshBasicMaterial({ color: 0x6600cc, transparent: true, opacity: 0.1, wireframe: true }));
+  g.add(glow);
+  // Wireframe edges
+  const wireGeo = new EdgesGeometry(new SphereGeometry(0.3, 12, 8));
+  g.add(new LineSegments(wireGeo, new LineBasicMaterial({ color: 0xcc88ff, transparent: true, opacity: 0.6 })));
+  return g;
+}
+
+function createWingmanShip(): Group {
+  const c = getColor();
+  const g = new Group();
+  // Smaller version of the player ship
+  const bodyGeo = new BoxGeometry(0.4, 0.1, 0.8);
+  const bodyMat = new MeshStandardMaterial({ color: 0x44aaff, emissive: new Color(0x44aaff), emissiveIntensity: 0.5, metalness: 0.8, roughness: 0.2 });
+  g.add(new Mesh(bodyGeo, bodyMat));
+  const wingGeo = new BoxGeometry(1.2, 0.03, 0.35);
+  const wingMat = new MeshStandardMaterial({ color: 0x2288dd, emissive: new Color(0x2288dd), emissiveIntensity: 0.3 });
+  const wing = new Mesh(wingGeo, wingMat);
+  wing.position.set(0, 0, 0.05);
+  g.add(wing);
+  const cockGeo = new SphereGeometry(0.1, 6, 4);
+  const cockMat = new MeshStandardMaterial({ color: 0xffffff, emissive: new Color(0xffffff), emissiveIntensity: 0.5 });
+  const cock = new Mesh(cockGeo, cockMat);
+  cock.position.set(0, 0.07, -0.15);
+  g.add(cock);
+  // Engine glow
+  const eng = new Mesh(new SphereGeometry(0.06, 4, 4), new MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.8 }));
+  eng.position.z = 0.4;
+  g.add(eng);
+  // Wireframe
+  const wireGeo = new EdgesGeometry(bodyGeo);
+  g.add(new LineSegments(wireGeo, new LineBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.5 })));
+  return g;
+}
+
+function createScoreZoneMesh(): Group {
+  const g = new Group();
+  const geo = new BoxGeometry(4, 3, 0.15);
+  const mat = new MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.08, side: 2 });
+  g.add(new Mesh(geo, mat));
+  // Border edges
+  const wireGeo = new EdgesGeometry(geo);
+  g.add(new LineSegments(wireGeo, new LineBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.5 })));
+  return g;
+}
+
+function spawnWingman() {
+  if (wingman && wingman.alive) return;
+  const ship = createWingmanShip();
+  ship.position.set(playerX + 1.5, state.altitude - 0.3, playerGroup.position.z + 1);
+  world.scene.add(ship);
+  wingman = { group: ship, alive: true, hp: 3, maxHp: 3, cooldown: 0, respawnTimer: 0, targetEnemy: null };
+  state.wingmanActive = true;
+  audio.play('wingman_spawn');
+  showAlert('WINGMAN DEPLOYED!');
+}
+
+function checkKillStreak() {
+  state.killStreak++;
+  if (state.killStreak > state.bestStreak) state.bestStreak = state.killStreak;
+  if (state.killStreak === 5) {
+    addScore(500); audio.play('streak'); showAlert('HOT STREAK! x5 +500');
+  } else if (state.killStreak === 10) {
+    addScore(1000); audio.play('streak'); showAlert('KILLING SPREE! x10 +1000');
+    state.rapidTimer = Math.max(state.rapidTimer, 5);
+  } else if (state.killStreak === 15) {
+    addScore(2000); audio.play('streak'); showAlert('UNSTOPPABLE! x15 +2000');
+    state.shieldTimer = Math.max(state.shieldTimer, 5);
+  } else if (state.killStreak === 25) {
+    addScore(5000); audio.play('streak'); showAlert('LEGENDARY! x25 +5000');
+    state.smartBombs = Math.min(3, state.smartBombs + 1);
+  }
+}
+
 // ───── Smart Bomb VFX ─────
 function triggerSmartBomb() {
   if (state.smartBombs <= 0 || state.smartBombCooldown > 0) return;
@@ -1468,6 +1622,36 @@ function spawnOpenSection() {
     world.scene.add(bm);
     powerUps.push({ mesh: bm, z: z - 22, lane: 0, type: 'magnet', alive: true }); // magnet gives score, smart bomb via 'b' key
   }
+  // Gravity wells (level 5+) — swirling vortices that pull the player
+  if (lvl >= 5 && Math.random() < 0.2 + lvl * 0.02) {
+    const gwg = createGravityWellMesh();
+    const gwx = (Math.random() - 0.5) * 6;
+    const gwy = 1.0 + Math.random() * 1.5;
+    const gwz = z - 12 - Math.random() * 8;
+    gwg.position.set(gwx, gwy, gwz);
+    world.scene.add(gwg);
+    gravityWells.push({
+      group: gwg, z: gwz, x: gwx, y: gwy, alive: true,
+      hp: 5 + Math.floor(lvl / 3), pullRadius: 6, pullStrength: 4 + lvl * 0.3, rotSpeed: 2,
+    });
+  }
+  // Wingman spawn every 5 levels
+  if (lvl >= 5 && lvl % 5 === 0 && !state.wingmanActive) {
+    spawnWingman();
+  }
+  // Score multiplier zone in open sections (level 3+) — use magnet power-up with score multiplier effect
+  if (lvl >= 3 && Math.random() < 0.2) {
+    const szm = createPowerUpMesh('spread');
+    szm.position.set((Math.random() - 0.5) * 4, 1.5, z - 18);
+    // Tint to golden-yellow for multiplier
+    szm.children.forEach(child => {
+      if ((child as Mesh).material && 'color' in (child as Mesh).material) {
+        ((child as Mesh).material as MeshBasicMaterial).color.setHex(0xffff00);
+      }
+    });
+    world.scene.add(szm);
+    powerUps.push({ mesh: szm, z: z - 18, lane: 0, type: 'magnet', alive: true }); // magnet type gives score bonus + activates multiplier
+  }
   fortressSpawnZ -= 30;
 }
 
@@ -1537,6 +1721,9 @@ function cleanupBehind() {
   for (let i = cloakers.length - 1; i >= 0; i--) {
     if (cloakers[i].z > limit) { world.scene.remove(cloakers[i].group); cloakers.splice(i, 1); }
   }
+  for (let i = gravityWells.length - 1; i >= 0; i--) {
+    if (gravityWells[i].z > limit) { world.scene.remove(gravityWells[i].group); gravityWells.splice(i, 1); }
+  }
   // Clean dead formations
   for (let i = formations.length - 1; i >= 0; i--) {
     const f = formations[i];
@@ -1569,6 +1756,9 @@ function resetGame() {
   state.smartBombs = 1; state.smartBombCooldown = 0; state.totalSmartBombs = 0;
   state.asteroidsDestroyed = 0; state.cloakersKilled = 0;
   state.sectorTheme = 0;
+  state.killStreak = 0; state.scoreMultiplier = 1; state.scoreMultiplierTimer = 0;
+  state.gravityWellsDestroyed = 0;
+  state.wingmanActive = false; state.wingmanRespawnTimer = 0;
   applySectorTheme(0);
   playerX = 0;
   fortressSpawnZ = -20;
@@ -1595,14 +1785,16 @@ function resetGame() {
   diveBombers.forEach(d => world.scene.remove(d.group)); diveBombers.length = 0;
   asteroids.forEach(a => world.scene.remove(a.group)); asteroids.length = 0;
   cloakers.forEach(c => world.scene.remove(c.group)); cloakers.length = 0;
+  gravityWells.forEach(g => world.scene.remove(g.group)); gravityWells.length = 0;
+  if (wingman) { world.scene.remove(wingman.group); wingman = null; }
   formations.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
 }
 
 function addScore(pts: number) {
-  const mult = Math.max(1, state.combo);
-  state.score += pts * mult;
+  const mult = Math.max(1, state.combo) * state.scoreMultiplier;
+  state.score += Math.floor(pts * mult);
   if (state.score > state.highScore) state.highScore = state.score;
 }
 
@@ -1610,6 +1802,7 @@ function addCombo() {
   state.combo++; state.comboTimer = 3;
   if (state.combo > state.maxCombo) state.maxCombo = state.combo;
   if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+  checkKillStreak();
 }
 
 function playerHit() {
@@ -1621,6 +1814,7 @@ function playerHit() {
   state.lives--;
   state.invincibleTimer = 2;
   if (state.weaponLevel > 1) state.weaponLevel--;
+  state.killStreak = 0; // Reset kill streak on hit
   triggerScreenShake(0.3, 0.4);
   audio.play('death');
   spawnParticles(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z, getColor().accent, 20);
@@ -1685,6 +1879,9 @@ function saveStats() {
     stats.asteroidsDestroyed = (stats.asteroidsDestroyed || 0) + state.asteroidsDestroyed;
     stats.cloakersKilled = (stats.cloakersKilled || 0) + state.cloakersKilled;
     stats.totalSmartBombs = (stats.totalSmartBombs || 0) + state.totalSmartBombs;
+    stats.bestStreak = Math.max(stats.bestStreak || 0, state.bestStreak);
+    stats.gravityWellsDestroyed = (stats.gravityWellsDestroyed || 0) + state.gravityWellsDestroyed;
+    stats.totalWingmanKills = (stats.totalWingmanKills || 0) + state.totalWingmanKills;
     localStorage.setItem('neon-fortress-stats', JSON.stringify(stats));
     state.highScore = stats.highScore;
   } catch {}
@@ -2055,6 +2252,12 @@ export class GameSystem extends createSystem({
     this.updateAsteroids(dt);
     // ── Update cloakers ──
     this.updateCloakers(dt);
+    // ── Update gravity wells ──
+    this.updateGravityWells(dt);
+    // ── Update wingman ──
+    this.updateWingman(dt);
+    // ── Update score multiplier ──
+    if (state.scoreMultiplierTimer > 0) { state.scoreMultiplierTimer -= dt; if (state.scoreMultiplierTimer <= 0) { state.scoreMultiplier = 1; } }
     // ── Update bonus corridor ──
     this.updateBonusCorridor(dt);
     // ── Alert timer ──
@@ -2191,6 +2394,29 @@ export class GameSystem extends createSystem({
               spawnFloatingScore(cl.group.position.x, cl.group.position.y + 0.5, cl.group.position.z, 600);
               audio.play('explode');
             } else audio.play('hit');
+            hit = true;
+          }
+        }
+
+        // vs gravity wells
+        if (!hit) for (const gw of gravityWells) {
+          if (!gw.alive || hit) continue;
+          const dist = Math.sqrt(
+            Math.pow(b.mesh.position.x - gw.group.position.x, 2) +
+            Math.pow(b.mesh.position.y - gw.group.position.y, 2) +
+            Math.pow(b.mesh.position.z - gw.group.position.z, 2)
+          );
+          if (dist < 1.2) {
+            gw.hp -= (b.damage || 1);
+            if (gw.hp <= 0) {
+              gw.alive = false; gw.group.visible = false;
+              addScore(800); addCombo(); state.totalKills++; state.gravityWellsDestroyed++;
+              spawnParticles(gw.group.position.x, gw.group.position.y, gw.group.position.z, 0x8800ff, 25);
+              spawnFloatingScore(gw.group.position.x, gw.group.position.y + 0.5, gw.group.position.z, 800);
+              audio.play('explode');
+              triggerScreenShake(0.3, 0.35);
+              showAlert('GRAVITY WELL DESTROYED!');
+            } else { audio.play('hit'); audio.play('gravity'); }
             hit = true;
           }
         }
@@ -2496,7 +2722,7 @@ export class GameSystem extends createSystem({
         else if (p.type === 'rapid') state.rapidTimer = 8;
         else if (p.type === 'fuel') state.fuel = Math.min(state.maxFuel, state.fuel + 40);
         else if (p.type === 'spread') { state.spreadShot = true; state.spreadTimer = 10; }
-        else if (p.type === 'magnet') addScore(500);
+        else if (p.type === 'magnet') { addScore(500); state.scoreMultiplier = 2; state.scoreMultiplierTimer = 5; audio.play('multiplier'); showAlert('2x SCORE MULTIPLIER!'); }
         else if (p.type === 'missile') { state.missileAmmo = Math.min(9, state.missileAmmo + 3); }
         else if (p.type === 'weapon') {
           if (state.weaponLevel < 3) {
@@ -2838,6 +3064,113 @@ export class GameSystem extends createSystem({
     }
   }
 
+  private updateGravityWells(dt: number) {
+    for (const gw of gravityWells) {
+      if (!gw.alive) continue;
+      gw.group.position.z = gw.z - state.scrollZ;
+      gw.group.position.x = gw.x;
+      gw.group.position.y = gw.y;
+      // Rotate the well
+      gw.group.rotation.y += gw.rotSpeed * dt;
+      gw.group.rotation.z += gw.rotSpeed * 0.3 * dt;
+      // Pulse core
+      const pulse = 1 + Math.sin(this.time * 4 + gw.z) * 0.15;
+      gw.group.children[0].scale.setScalar(pulse);
+      // Pulse outer glow
+      if (gw.group.children[4]) {
+        ((gw.group.children[4] as Mesh).material as any).opacity = 0.05 + Math.sin(this.time * 2 + gw.z) * 0.05;
+      }
+      // Pull effect on player
+      if (gw.group.position.z > -20 && gw.group.position.z < 10) {
+        const dx = gw.group.position.x - playerGroup.position.x;
+        const dy = gw.group.position.y - playerGroup.position.y;
+        const dz = gw.group.position.z - playerGroup.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < gw.pullRadius && dist > 0.3) {
+          const pullForce = (gw.pullStrength / (dist * dist)) * dt;
+          playerX += (dx / dist) * pullForce * 2;
+          playerX = Math.max(-5, Math.min(5, playerX));
+          state.targetAltitude += (dy / dist) * pullForce;
+          state.targetAltitude = Math.max(0.3, Math.min(3.5, state.targetAltitude));
+          // Proximity damage
+          if (dist < 0.8) {
+            playerHit();
+            spawnParticles(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z, 0x8800ff, 10);
+          }
+        }
+      }
+    }
+  }
+
+  private updateWingman(dt: number) {
+    // Handle wingman respawn timer
+    if (!state.wingmanActive && state.wingmanRespawnTimer > 0) {
+      state.wingmanRespawnTimer -= dt;
+      if (state.wingmanRespawnTimer <= 0) {
+        spawnWingman();
+      }
+      return;
+    }
+    if (!wingman || !wingman.alive) return;
+    // Follow player with offset
+    const targetX = playerX + 1.5;
+    const targetY = state.altitude - 0.3;
+    const targetZ = playerGroup.position.z + 1.5;
+    wingman.group.position.x += (targetX - wingman.group.position.x) * 3 * dt;
+    wingman.group.position.y += (targetY - wingman.group.position.y) * 3 * dt;
+    wingman.group.position.z += (targetZ - wingman.group.position.z) * 3 * dt;
+    // Bank with player
+    wingman.group.rotation.z = -(playerX - wingman.group.position.x) * 0.3;
+    // Auto-shoot at nearest enemy
+    wingman.cooldown -= dt;
+    if (wingman.cooldown <= 0) {
+      // Find nearest enemy
+      let nearestDist = 20;
+      let nearestPos: { x: number; y: number; z: number } | null = null;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const dist = Math.sqrt(Math.pow(wingman.group.position.x - e.group.position.x, 2) + Math.pow(wingman.group.position.z - e.group.position.z, 2));
+        if (dist < nearestDist && e.group.position.z < wingman.group.position.z) {
+          nearestDist = dist; nearestPos = { x: e.group.position.x, y: e.group.position.y, z: e.group.position.z };
+        }
+      }
+      for (const d of patrolDrones) {
+        if (!d.alive) continue;
+        const dist = Math.sqrt(Math.pow(wingman.group.position.x - d.group.position.x, 2) + Math.pow(wingman.group.position.z - d.group.position.z, 2));
+        if (dist < nearestDist && d.group.position.z < wingman.group.position.z) {
+          nearestDist = dist; nearestPos = { x: d.group.position.x, y: d.group.position.y, z: d.group.position.z };
+        }
+      }
+      if (nearestPos) {
+        wingman.cooldown = 0.4;
+        const b = createBullet(0x44aaff, false);
+        b.position.set(wingman.group.position.x, wingman.group.position.y, wingman.group.position.z);
+        world.scene.add(b);
+        const dx = nearestPos.x - wingman.group.position.x;
+        const dy = nearestPos.y - wingman.group.position.y;
+        const dz = nearestPos.z - wingman.group.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 0.1) {
+          bullets.push({ mesh: b, vx: (dx / dist) * 15, vy: (dy / dist) * 15, vz: (dz / dist) * 15, life: 2.5, isEnemy: false });
+        }
+      } else {
+        // No targets, shoot forward
+        wingman.cooldown = 0.6;
+        const b = createBullet(0x44aaff, false);
+        b.position.set(wingman.group.position.x, wingman.group.position.y, wingman.group.position.z);
+        world.scene.add(b);
+        bullets.push({ mesh: b, vx: 0, vy: 0, vz: -15, life: 2, isEnemy: false });
+      }
+    }
+    // Wingman engine trail
+    if (Math.random() < 0.3) {
+      const tp = new Mesh(new SphereGeometry(0.03, 4, 4), new MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.6 }));
+      tp.position.set(wingman.group.position.x, wingman.group.position.y, wingman.group.position.z + 0.4);
+      world.scene.add(tp);
+      engineTrailParticles.push({ mesh: tp, vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5, vz: 1.5, life: 0.4, maxLife: 0.4 });
+    }
+  }
+
   private updateBonusCorridor(dt: number) {
     if (!state.bonusActive) return;
     state.bonusTimer -= dt;
@@ -2907,6 +3240,19 @@ export class GameSystem extends createSystem({
     // Checkpoint
     if (state.checkpoint > 0) {
       setText('hud-level', `Level: ${state.level} | CP: ${state.checkpoint}`);
+    }
+    // Kill streak + score multiplier in combo display
+    if (state.killStreak >= 3) {
+      const streakText = state.combo > 1 ? `x${state.combo} COMBO | 🔥${state.killStreak} STREAK` : `🔥${state.killStreak} STREAK`;
+      setText('hud-combo', streakText);
+    }
+    if (state.scoreMultiplier > 1) {
+      setText('hud-score', `Score: ${state.score} (${state.scoreMultiplier}x)`);
+    }
+    // Wingman status
+    if (state.wingmanActive && wingman && wingman.alive) {
+      const wlvl2 = state.weaponLevel > 1 ? ` | WPN Lv${state.weaponLevel}` : '';
+      setText('hud-altitude', `Alt: ${state.altitude.toFixed(1)}m${wlvl2} | WINGMAN`);
     }
     // Alert text
     if (state.alertTimer > 0 && state.alertText) {
@@ -3039,6 +3385,10 @@ export class GameSystem extends createSystem({
     asteroids.forEach(a => { if (a.alive) addDot(a.group.position.x, a.group.position.z, 0x888888); });
     // Cloakers (blue, only when visible)
     cloakers.forEach(cl => { if (cl.alive && cl.visible_pct > 0.3) addDot(cl.group.position.x, cl.group.position.z, 0x4488ff); });
+    // Gravity wells (purple)
+    gravityWells.forEach(gw => { if (gw.alive) addDot(gw.group.position.x, gw.group.position.z, 0x8800ff); });
+    // Wingman (light blue)
+    if (wingman && wingman.alive) addDot(wingman.group.position.x, wingman.group.position.z, 0x44aaff);
   }
 
   private updateAmbient(time: number) {
@@ -3097,6 +3447,8 @@ export class GameSystem extends createSystem({
         setText('result-ground', `Ground Targets: ${state.groundTargetsDestroyed}`);
         setText('result-formations', `Formations: ${state.formationsDestroyed}`);
         setText('result-missiles', `Missiles Used: ${state.totalMissilesUsed}`);
+        // Kill streak
+        setText('result-formations', `Formations: ${state.formationsDestroyed} | Streak: ${state.bestStreak}`);
         // Performance rank
         const rank = getPerformanceRank(state.score, state.totalKills, state.level, state.maxCombo);
         setText('result-rank', `RANK: ${rank.rank} — ${rank.label}`);
@@ -3129,6 +3481,7 @@ export class GameSystem extends createSystem({
           setText('stat-asteroids', `Asteroids: ${s.asteroidsDestroyed || 0}`);
           setText('stat-cloakers', `Cloakers: ${s.cloakersKilled || 0}`);
           setText('stat-bombs', `Smart Bombs: ${s.totalSmartBombs || 0}`);
+          setText('stat-distance', `Dist: ${Math.floor(s.totalDistance || 0)}m | Streak: ${s.bestStreak || 0}`);
         } catch {}
       }
     }
