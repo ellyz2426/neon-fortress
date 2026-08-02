@@ -385,41 +385,6 @@ class AudioEngine {
       o.connect(g); g.gain.value = this.sfxVol * 0.4;
       g.gain.exponentialRampToValueAtTime(0.01, now + 1.1);
       o.start(now); o.stop(now + 1.1);
-    } else if (type === 'afterburner') {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.setValueAtTime(150, now);
-      o.frequency.exponentialRampToValueAtTime(800, now + 0.3);
-      o.connect(g); g.gain.value = this.sfxVol * 0.4;
-      g.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-      o.start(now); o.stop(now + 0.4);
-    } else if (type === 'decoy') {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(2000, now);
-      o.frequency.exponentialRampToValueAtTime(400, now + 0.2);
-      o.connect(g); g.gain.value = this.sfxVol * 0.4;
-      g.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-      o.start(now); o.stop(now + 0.25);
-    } else if (type === 'laser_beam') {
-      const o = ctx.createOscillator();
-      o.type = 'square';
-      o.frequency.setValueAtTime(120, now);
-      o.frequency.linearRampToValueAtTime(180, now + 0.3);
-      o.connect(g); g.gain.value = this.sfxVol * 0.25;
-      g.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-      o.start(now); o.stop(now + 0.4);
-    } else if (type === 'supply_drop') {
-      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
-      notes.forEach((freq, i) => {
-        const o2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        o2.type = 'sine'; o2.frequency.value = freq;
-        g2.gain.value = this.sfxVol * 0.25;
-        o2.connect(g2); g2.connect(this.masterGain!);
-        g2.gain.exponentialRampToValueAtTime(0.01, now + 0.08 * i + 0.35);
-        o2.start(now + 0.08 * i); o2.stop(now + 0.08 * i + 0.35);
-      });
     }
   }
 
@@ -582,16 +547,6 @@ interface GameState {
   homingMissilesDodged: number;
   warpTransitionTimer: number;
   warpTransitionActive: boolean;
-  // Round 8 additions
-  afterburnerActive: boolean;
-  afterburnerTimer: number;
-  afterburnerCooldown: number;
-  decoyCount: number;
-  decoyCooldown: number;
-  totalDecoysUsed: number;
-  supplyDropTimer: number;
-  supplyCratesOpened: number;
-  laserTurretsDestroyed: number;
 }
 
 const state: GameState = {
@@ -621,9 +576,6 @@ const state: GameState = {
   scoreMultiplier: 1, scoreMultiplierTimer: 0, gravityWellsDestroyed: 0,
   carriersDestroyed: 0, shieldGensDestroyed: 0, homingMissilesDodged: 0,
   warpTransitionTimer: 0, warpTransitionActive: false,
-  afterburnerActive: false, afterburnerTimer: 0, afterburnerCooldown: 0,
-  decoyCount: 2, decoyCooldown: 0, totalDecoysUsed: 0,
-  supplyDropTimer: 90, supplyCratesOpened: 0, laserTurretsDestroyed: 0,
 };
 
 // ───── Scene Objects ─────
@@ -661,25 +613,6 @@ const carriers: CarrierShip[] = [];
 const shieldGenerators: ShieldGenerator[] = [];
 const homingMissiles: HomingMissile[] = [];
 let warpLines: Mesh[] = [];
-
-// Round 8 types
-interface LaserTurret {
-  group: Group; z: number; lane: number; alive: boolean;
-  hp: number; sweepAngle: number; sweepDir: number;
-  beamMesh: Mesh; beamActive: boolean; beamTimer: number;
-}
-interface Decoy {
-  group: Group; x: number; y: number; z: number;
-  life: number; alive: boolean;
-}
-interface SupplyCrate {
-  group: Group; z: number; x: number; y: number;
-  alive: boolean; hp: number; maxHp: number;
-}
-const laserTurrets: LaserTurret[] = [];
-const decoys: Decoy[] = [];
-const supplyCrates: SupplyCrate[] = [];
-
 let boss: BossShip | null = null;
 let spawnTimer = 0;
 let playerX = 0;
@@ -1487,14 +1420,6 @@ function triggerSmartBomb() {
       killCount++;
     }
   }
-  // Smart bomb clears laser turret beams
-  for (const lt of laserTurrets) {
-    if (lt.alive && lt.group.position.z > -25 && lt.group.position.z < 15) {
-      lt.beamActive = false;
-      lt.beamMesh.visible = false;
-      lt.beamTimer = 3;
-    }
-  }
   // Remove enemy bullets
   for (let i = bullets.length - 1; i >= 0; i--) {
     if (bullets[i].isEnemy) {
@@ -1599,76 +1524,6 @@ function showAlert(text: string) {
   state.alertTimer = 2;
 }
 
-
-// ───── Round 8 Mesh Factories ─────
-function createLaserTurretMesh(lane: number): { group: Group; beamMesh: Mesh } {
-  const c = getColor();
-  const g = new Group();
-  // Base
-  const base = new Mesh(new CylinderGeometry(0.35, 0.4, 0.3, 8), new MeshStandardMaterial({ color: 0x882200, emissive: new Color(0x882200), emissiveIntensity: 0.4, metalness: 0.8 }));
-  base.position.y = 0.15;
-  g.add(base);
-  // Emitter dome
-  const dome = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshStandardMaterial({ color: 0xff4400, emissive: new Color(0xff4400), emissiveIntensity: 0.8 }));
-  dome.position.y = 0.35;
-  g.add(dome);
-  // Warning lights
-  [-0.25, 0.25].forEach(ox => {
-    const light = new Mesh(new SphereGeometry(0.05, 4, 4), new MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 }));
-    light.position.set(ox, 0.3, 0);
-    g.add(light);
-  });
-  // Beam
-  const beamGeo = new CylinderGeometry(0.03, 0.03, 8, 4);
-  beamGeo.rotateZ(Math.PI / 2);
-  const beamMat = new MeshBasicMaterial({ color: 0xff2200, transparent: true, opacity: 0.6 });
-  const beamMesh = new Mesh(beamGeo, beamMat);
-  beamMesh.position.y = 0.35;
-  beamMesh.visible = false;
-  g.add(beamMesh);
-  g.position.set(lane * 2.5, 0, 0);
-  return { group: g, beamMesh };
-}
-
-function createDecoyMesh(): Group {
-  const g = new Group();
-  // Wireframe ghost ship
-  const bodyGeo = new BoxGeometry(0.6, 0.15, 1.2);
-  const bodyMat = new MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4, wireframe: true });
-  g.add(new Mesh(bodyGeo, bodyMat));
-  const wingGeo = new BoxGeometry(1.8, 0.05, 0.5);
-  const wingMat = new MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3, wireframe: true });
-  const wing = new Mesh(wingGeo, wingMat);
-  wing.position.set(0, 0, 0.1);
-  g.add(wing);
-  // Holographic glow sphere
-  const glow = new Mesh(new SphereGeometry(0.8, 8, 6), new MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.08 }));
-  g.add(glow);
-  return g;
-}
-
-function createSupplyCrateMesh(): Group {
-  const g = new Group();
-  // Golden crate body
-  const crateGeo = new BoxGeometry(0.6, 0.6, 0.6);
-  const crateMat = new MeshStandardMaterial({ color: 0xffaa00, emissive: new Color(0xffaa00), emissiveIntensity: 0.6, metalness: 0.9, roughness: 0.1 });
-  g.add(new Mesh(crateGeo, crateMat));
-  // Wireframe
-  const wireGeo = new EdgesGeometry(crateGeo);
-  const wireMat = new LineBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.8 });
-  g.add(new LineSegments(wireGeo, wireMat));
-  // Glow orb
-  const glow = new Mesh(new SphereGeometry(0.5, 8, 6), new MeshBasicMaterial({ color: 0xffdd00, transparent: true, opacity: 0.1 }));
-  g.add(glow);
-  // Cross marking
-  const crossH = new Mesh(new BoxGeometry(0.4, 0.02, 0.08), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
-  crossH.position.set(0, 0.31, 0);
-  g.add(crossH);
-  const crossV = new Mesh(new BoxGeometry(0.08, 0.02, 0.4), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
-  crossV.position.set(0, 0.31, 0);
-  g.add(crossV);
-  return g;
-}
 // ───── Environment ─────
 function buildEnvironment(scene: any) {
   const c = getColor();
@@ -1840,18 +1695,6 @@ function spawnFortressSection() {
       const sgHp = 3 + Math.floor(lvl / 3);
       shieldGenerators.push({ group: gen, z: rowZ - 2, lane: sgLane, alive: true, hp: sgHp, maxHp: sgHp, fieldMesh: field, fieldActive: true });
     }
-    // Laser beam turrets (level 5+) — sweeping beam hazard
-    if (lvl >= 5 && Math.random() < 0.08 + (lvl - 5) * 0.012 && row > 1 && row < 6) {
-      const ltLane = Math.floor(Math.random() * 3) - 1;
-      const { group: ltg, beamMesh } = createLaserTurretMesh(ltLane);
-      ltg.position.z = rowZ - 1.5;
-      world.scene.add(ltg);
-      laserTurrets.push({
-        group: ltg, z: rowZ - 1.5, lane: ltLane, alive: true,
-        hp: 2 + Math.floor(lvl / 3), sweepAngle: 0, sweepDir: 1,
-        beamMesh, beamActive: false, beamTimer: 2 + Math.random() * 2,
-      });
-    }
   }
   fortressSpawnZ -= 40;
 }
@@ -2003,17 +1846,6 @@ function spawnOpenSection() {
     audio.play('carrier');
     showAlert('CARRIER SHIP DETECTED!');
   }
-  // Supply crate (rare, level 3+)
-  if (lvl >= 3 && Math.random() < 0.06) {
-    const scg = createSupplyCrateMesh();
-    const scx = (Math.random() - 0.5) * 4;
-    const scy = 1.5 + Math.random() * 1;
-    const scz = z - 15 - Math.random() * 8;
-    scg.position.set(scx, scy, scz);
-    world.scene.add(scg);
-    const scHp = 3;
-    supplyCrates.push({ group: scg, z: scz + state.scrollZ, x: scx, y: scy, alive: true, hp: scHp, maxHp: scHp });
-  }
   fortressSpawnZ -= 30;
 }
 
@@ -2095,15 +1927,6 @@ function cleanupBehind() {
   for (let i = homingMissiles.length - 1; i >= 0; i--) {
     if (homingMissiles[i].life <= 0) { world.scene.remove(homingMissiles[i].mesh); homingMissiles.splice(i, 1); }
   }
-  for (let i = laserTurrets.length - 1; i >= 0; i--) {
-    if (laserTurrets[i].z > limit) { world.scene.remove(laserTurrets[i].group); laserTurrets.splice(i, 1); }
-  }
-  for (let i = decoys.length - 1; i >= 0; i--) {
-    if (!decoys[i].alive) { world.scene.remove(decoys[i].group); decoys.splice(i, 1); }
-  }
-  for (let i = supplyCrates.length - 1; i >= 0; i--) {
-    if (supplyCrates[i].z > limit) { world.scene.remove(supplyCrates[i].group); supplyCrates.splice(i, 1); }
-  }
   // Clean dead formations
   for (let i = formations.length - 1; i >= 0; i--) {
     const f = formations[i];
@@ -2142,9 +1965,6 @@ function resetGame() {
   state.carriersDestroyed = 0; state.shieldGensDestroyed = 0;
   state.homingMissilesDodged = 0;
   state.warpTransitionTimer = 0; state.warpTransitionActive = false;
-  state.afterburnerActive = false; state.afterburnerTimer = 0; state.afterburnerCooldown = 0;
-  state.decoyCount = 2; state.decoyCooldown = 0; state.totalDecoysUsed = 0;
-  state.supplyDropTimer = 90; state.supplyCratesOpened = 0; state.laserTurretsDestroyed = 0;
   applySectorTheme(0);
   playerX = 0;
   fortressSpawnZ = -20;
@@ -2178,9 +1998,6 @@ function resetGame() {
   homingMissiles.forEach(h => world.scene.remove(h.mesh)); homingMissiles.length = 0;
   warpLines.forEach(l => world.scene.remove(l)); warpLines.length = 0;
   formations.length = 0;
-  laserTurrets.forEach(lt => world.scene.remove(lt.group)); laserTurrets.length = 0;
-  decoys.forEach(d => world.scene.remove(d.group)); decoys.length = 0;
-  supplyCrates.forEach(sc => world.scene.remove(sc.group)); supplyCrates.length = 0;
   spawnFortressSection();
   state.gamesPlayed++;
 }
@@ -2277,9 +2094,6 @@ function saveStats() {
     stats.totalWingmanKills = (stats.totalWingmanKills || 0) + state.totalWingmanKills;
     stats.carriersDestroyed = (stats.carriersDestroyed || 0) + state.carriersDestroyed;
     stats.shieldGensDestroyed = (stats.shieldGensDestroyed || 0) + state.shieldGensDestroyed;
-    stats.totalDecoysUsed = (stats.totalDecoysUsed || 0) + state.totalDecoysUsed;
-    stats.supplyCratesOpened = (stats.supplyCratesOpened || 0) + state.supplyCratesOpened;
-    stats.laserTurretsDestroyed = (stats.laserTurretsDestroyed || 0) + state.laserTurretsDestroyed;
     localStorage.setItem('neon-fortress-stats', JSON.stringify(stats));
     state.highScore = stats.highScore;
   } catch {}
@@ -2511,42 +2325,6 @@ export class GameSystem extends createSystem({
       if (left.getButtonPressed(InputComponent.Trigger)) fireMissile = true;
     }
 
-
-    // Afterburner (shift key / left thumbstick press)
-    let afterburnerInput = false;
-    if (this.keys['shift']) afterburnerInput = true;
-    if (left && left.getButtonPressed(InputComponent.Thumbstick)) afterburnerInput = true;
-    if (afterburnerInput && state.afterburnerCooldown <= 0 && state.fuel > 10) {
-      if (!state.afterburnerActive) { audio.play('afterburner'); showAlert('AFTERBURNER!'); }
-      state.afterburnerActive = true;
-      state.afterburnerTimer = Math.min(state.afterburnerTimer + dt, 3);
-    } else {
-      if (state.afterburnerActive && state.afterburnerTimer > 0) {
-        state.afterburnerCooldown = 5;
-      }
-      state.afterburnerActive = false;
-      state.afterburnerTimer = 0;
-    }
-    if (state.afterburnerCooldown > 0) state.afterburnerCooldown -= dt;
-
-    // Decoy deployment (D key / Y button, one-shot)
-    let deployDecoy = false;
-    if (this.keys['v']) { deployDecoy = true; this.keys['v'] = false; }
-    if (left && left.getButtonPressed(InputComponent.Y_Button)) deployDecoy = true;
-    if (deployDecoy && state.decoyCount > 0 && state.decoyCooldown <= 0) {
-      state.decoyCount--;
-      state.decoyCooldown = 3;
-      state.totalDecoysUsed++;
-      const dg = createDecoyMesh();
-      dg.position.set(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z);
-      world.scene.add(dg);
-      decoys.push({ group: dg, x: playerGroup.position.x, y: playerGroup.position.y, z: playerGroup.position.z + state.scrollZ, life: 6, alive: true });
-      audio.play('decoy');
-      showAlert('DECOY DEPLOYED!');
-      spawnParticles(playerGroup.position.x, playerGroup.position.y, playerGroup.position.z, 0x00ffff, 10);
-    }
-    if (state.decoyCooldown > 0) state.decoyCooldown -= dt;
-
     // Move player
     const lateralSpeed = 6;
     playerX += moveX * lateralSpeed * dt;
@@ -2589,13 +2367,12 @@ export class GameSystem extends createSystem({
       spawnEngineTrail();
     }
 
-    // Scroll (afterburner doubles speed)
-    const effectiveSpeed = state.afterburnerActive ? state.scrollSpeed * 2 : state.scrollSpeed;
-    state.scrollZ -= effectiveSpeed * dt;
-    state.totalDistance += effectiveSpeed * dt;
+    // Scroll
+    state.scrollZ -= state.scrollSpeed * dt;
+    state.totalDistance += state.scrollSpeed * dt;
 
-    // Fuel (afterburner triples drain)
-    const fuelRate = (state.afterburnerActive ? 9 : 3) * getDiffMult();
+    // Fuel
+    const fuelRate = 3 * getDiffMult();
     state.fuel -= fuelRate * dt;
     if (state.fuel <= 20 && state.fuel + fuelRate * dt > 20) showAlert('FUEL LOW!');
     if (state.fuel <= 0) { state.fuel = 0; playerHit(); }
@@ -2700,26 +2477,6 @@ export class GameSystem extends createSystem({
     this.updateHomingMissiles(dt);
     // ── Update warp transition ──
     this.updateWarpTransition(dt);
-    // ── Update laser turrets ──
-    this.updateLaserTurrets(dt);
-    // ── Update decoys ──
-    this.updateDecoys(dt);
-    // ── Update supply crates ──
-    this.updateSupplyCrates(dt);
-    // ── Supply drop timer ──
-    state.supplyDropTimer -= dt;
-    if (state.supplyDropTimer <= 0 && state.level >= 3) {
-      state.supplyDropTimer = 90;
-      const scg = createSupplyCrateMesh();
-      const scx = (Math.random() - 0.5) * 6;
-      const scy = 1.5 + Math.random();
-      const scz = playerGroup.position.z - 20 - Math.random() * 10;
-      scg.position.set(scx, scy, scz);
-      world.scene.add(scg);
-      supplyCrates.push({ group: scg, z: scz + state.scrollZ, x: scx, y: scy, alive: true, hp: 3, maxHp: 3 });
-      showAlert('SUPPLY DROP INCOMING!');
-      audio.play('alert');
-    }
     // ── Update score multiplier ──
     if (state.scoreMultiplierTimer > 0) { state.scoreMultiplierTimer -= dt; if (state.scoreMultiplierTimer <= 0) { state.scoreMultiplier = 1; } }
     // ── Update bonus corridor ──
@@ -2968,62 +2725,6 @@ export class GameSystem extends createSystem({
           }
         }
 
-
-        // vs laser turrets
-        if (!hit) for (const lt of laserTurrets) {
-          if (!lt.alive || hit) continue;
-          const ltWorldZ = lt.z - state.scrollZ;
-          if (Math.abs(b.mesh.position.x - lt.group.position.x) < 0.5 && Math.abs(b.mesh.position.z - ltWorldZ) < 0.5 && b.mesh.position.y < 1.0) {
-            lt.hp -= dmg;
-            if (lt.hp <= 0) {
-              lt.alive = false; lt.group.visible = false;
-              lt.beamMesh.visible = false;
-              addScore(350); addCombo(); state.totalKills++; state.laserTurretsDestroyed++;
-              spawnParticles(lt.group.position.x, 0.4, lt.group.position.z, 0xff4400, 15);
-              spawnFloatingScore(lt.group.position.x, 1, lt.group.position.z, 350);
-              audio.play('explode');
-              showAlert('LASER TURRET DESTROYED!');
-            } else audio.play('hit');
-            hit = true;
-          }
-        }
-
-        // vs supply crates
-        if (!hit) for (const sc of supplyCrates) {
-          if (!sc.alive || hit) continue;
-          if (Math.abs(b.mesh.position.x - sc.group.position.x) < 0.5 && Math.abs(b.mesh.position.y - sc.group.position.y) < 0.5 && Math.abs(b.mesh.position.z - sc.group.position.z) < 0.5) {
-            sc.hp -= dmg;
-            if (sc.hp <= 0) {
-              sc.alive = false; sc.group.visible = false;
-              state.supplyCratesOpened++;
-              addScore(1000); addCombo();
-              spawnParticles(sc.group.position.x, sc.group.position.y, sc.group.position.z, 0xffcc00, 25);
-              spawnFloatingScore(sc.group.position.x, sc.group.position.y + 0.5, sc.group.position.z, 1000);
-              audio.play('supply_drop');
-              showAlert('SUPPLY CRATE OPENED! +1000');
-              triggerScreenShake(0.15, 0.2);
-              // Spawn 3 random power-ups
-              const crateTypes: Array<'shield' | 'rapid' | 'fuel' | 'spread' | 'missile' | 'weapon'> = ['shield', 'rapid', 'fuel', 'missile', 'weapon', 'fuel'];
-              for (let ci = 0; ci < 3; ci++) {
-                const ct = crateTypes[Math.floor(Math.random() * crateTypes.length)];
-                const cp = createPowerUpMesh(ct);
-                const cpx = sc.group.position.x + (ci - 1) * 1.2;
-                const cpz = sc.group.position.z - 2;
-                cp.position.set(cpx, sc.group.position.y, cpz);
-                world.scene.add(cp);
-                powerUps.push({ mesh: cp, z: cpz + state.scrollZ, lane: 0, type: ct, alive: true });
-              }
-              // Also restore fuel
-              state.fuel = Math.min(state.maxFuel, state.fuel + 30);
-            } else {
-              audio.play('hit');
-              // Damage visual - increase glow
-              const dmgPct = sc.hp / sc.maxHp;
-              sc.group.children[2].scale.setScalar(1 + (1 - dmgPct) * 0.5);
-            }
-            hit = true;
-          }
-        }
         // vs boss
         if (!hit && boss && boss.alive) {
           const dx = b.mesh.position.x - boss.group.position.x;
@@ -3118,11 +2819,9 @@ export class GameSystem extends createSystem({
       e.cooldown -= dt;
       if (e.cooldown <= 0 && e.group.position.z > -20 && e.group.position.z < 10) {
         e.cooldown = 2.5 / getDiffMult();
-        const activeDecoyE = decoys.find(dc => dc.alive && dc.life > 0);
-        const eTarget = activeDecoyE ? activeDecoyE.group.position : playerGroup.position;
-        const dx = eTarget.x - e.group.position.x;
-        const dy = eTarget.y - e.group.position.y;
-        const dz = eTarget.z - e.group.position.z;
+        const dx = playerGroup.position.x - e.group.position.x;
+        const dy = playerGroup.position.y - e.group.position.y;
+        const dz = playerGroup.position.z - e.group.position.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (dist > 0.1) {
           const b = createBullet(0xff2200, true);
@@ -3991,100 +3690,6 @@ export class GameSystem extends createSystem({
     audio.play('warp');
   }
 
-
-  private updateLaserTurrets(dt: number) {
-    for (const lt of laserTurrets) {
-      if (!lt.alive) continue;
-      lt.group.position.z = lt.z - state.scrollZ;
-      // Warning light pulse
-      lt.group.children[2].scale.setScalar(0.8 + Math.sin(this.time * 6) * 0.3);
-      lt.group.children[3].scale.setScalar(0.8 + Math.sin(this.time * 6 + Math.PI) * 0.3);
-      // Beam timer
-      lt.beamTimer -= dt;
-      if (lt.beamTimer <= 0) {
-        lt.beamActive = !lt.beamActive;
-        lt.beamMesh.visible = lt.beamActive;
-        lt.beamTimer = lt.beamActive ? 2.5 : 1.5 + Math.random();
-        if (lt.beamActive) audio.play('laser_beam');
-      }
-      // Sweep beam
-      if (lt.beamActive) {
-        lt.sweepAngle += lt.sweepDir * 1.5 * dt;
-        if (Math.abs(lt.sweepAngle) > 0.8) lt.sweepDir *= -1;
-        lt.beamMesh.rotation.y = lt.sweepAngle;
-        // Beam opacity pulse
-        (lt.beamMesh.material as MeshBasicMaterial).opacity = 0.4 + Math.sin(this.time * 12) * 0.2;
-        // Player collision with beam
-        if (lt.group.position.z > -5 && lt.group.position.z < 5) {
-          const beamEndX = lt.group.position.x + Math.sin(lt.sweepAngle) * 4;
-          const dx = playerGroup.position.x - lt.group.position.x;
-          const beamDx = beamEndX - lt.group.position.x;
-          const t = Math.max(0, Math.min(1, dx / (beamDx || 1)));
-          const closestX = lt.group.position.x + beamDx * t;
-          const distToBeam = Math.abs(playerGroup.position.x - closestX);
-          const dz = Math.abs(playerGroup.position.z - lt.group.position.z);
-          if (distToBeam < 0.4 && dz < 0.5 && state.altitude < 1.5) {
-            playerHit();
-            audio.play('electric');
-          }
-        }
-      }
-    }
-  }
-
-  private updateDecoys(dt: number) {
-    // Check if any active decoy exists for enemy targeting
-    const activeDecoy = decoys.find(d => d.alive && d.life > 0);
-    for (const d of decoys) {
-      if (!d.alive) continue;
-      d.group.position.z = d.z - state.scrollZ;
-      d.life -= dt;
-      // Flicker effect
-      d.group.visible = d.life > 0.5 || Math.sin(this.time * 20) > 0;
-      // Pulse opacity
-      d.group.children.forEach(child => {
-        if ((child as Mesh).material && 'opacity' in (child as Mesh).material) {
-          ((child as Mesh).material as MeshBasicMaterial).opacity = (0.2 + Math.sin(this.time * 8) * 0.15) * Math.min(1, d.life);
-        }
-      });
-      // Rotation
-      d.group.rotation.y += dt * 2;
-      if (d.life <= 0) {
-        d.alive = false;
-        d.group.visible = false;
-        spawnParticles(d.group.position.x, d.group.position.y, d.group.position.z, 0x00ffff, 8);
-      }
-    }
-    // If decoy active, redirect enemy fire toward decoy
-    if (activeDecoy) {
-      // Enemies target decoy position instead of player for their shots
-      // This is handled by modifying the target in enemy shooting logic
-      // We'll modify enemy positions check to use decoy pos
-    }
-  }
-
-  private updateSupplyCrates(dt: number) {
-    for (const sc of supplyCrates) {
-      if (!sc.alive) continue;
-      sc.group.position.z = sc.z - state.scrollZ;
-      // Spinning animation
-      sc.group.rotation.y += dt * 2;
-      sc.group.rotation.x += dt * 0.5;
-      // Bobbing
-      sc.group.position.y = sc.y + Math.sin(this.time * 2 + sc.z) * 0.3;
-      // Glow pulse
-      if (sc.group.children[2]) {
-        const pulse = 0.08 + Math.sin(this.time * 3) * 0.05;
-        ((sc.group.children[2] as Mesh).material as MeshBasicMaterial).opacity = pulse;
-        sc.group.children[2].scale.setScalar(1 + Math.sin(this.time * 2) * 0.2);
-      }
-      // Particle trail
-      if (Math.random() < 0.15) {
-        spawnParticles(sc.group.position.x, sc.group.position.y - 0.3, sc.group.position.z, 0xffaa00, 1);
-      }
-    }
-  }
-
   private updateHUD() {
     const doc = this.docs['hud']?.doc;
     if (!doc) return;
@@ -4157,16 +3762,6 @@ export class GameSystem extends createSystem({
       setText('hud-boss', `⭐ BONUS TIME! ${Math.ceil(state.bonusTimer)}s ⭐`);
     } else if (state.alertTimer <= 0) {
       setText('hud-boss', '');
-    }
-    // Afterburner status
-    if (state.afterburnerActive) {
-      setText('hud-timer', state.mode === 'speed' ? `Time: ${Math.ceil(state.speedTimer)}s | 🔥AB` : '🔥 AFTERBURNER');
-    }
-    // Decoy count
-    if (state.decoyCount > 0) {
-      const decoyCd = state.decoyCooldown > 0 ? ' (CD)' : '';
-      const currentPowers = powers + `👻x${state.decoyCount}${decoyCd} `;
-      setText('hud-powerups', currentPowers);
     }
   }
 
@@ -4300,12 +3895,6 @@ export class GameSystem extends createSystem({
     });
     // Shield generators (cyan)
     shieldGenerators.forEach(sg => { if (sg.alive) addDot(sg.group.position.x, sg.group.position.z, 0x44aaff); });
-    // Laser turrets (dark red)
-    laserTurrets.forEach(lt => { if (lt.alive) addDot(lt.group.position.x, lt.group.position.z, 0xcc4400); });
-    // Supply crates (gold)
-    supplyCrates.forEach(sc => { if (sc.alive) addDot(sc.group.position.x, sc.group.position.z, 0xffaa00); });
-    // Decoys (cyan)
-    decoys.forEach(d => { if (d.alive) addDot(d.group.position.x, d.group.position.z, 0x00ffff); });
     // Homing missiles (bright red blinking)
     homingMissiles.forEach(hm => {
       if (hm.life > 0) {
